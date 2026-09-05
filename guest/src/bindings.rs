@@ -14,7 +14,7 @@
     feature = "store",
 ))]
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../wit",
     world: "plugin",
     pub_export_macro: true,
     default_bindings_module: "modus_sdk::bindings",

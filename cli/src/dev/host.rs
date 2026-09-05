@@ -18,7 +18,7 @@ use std::time::Duration;
 use wasmtime::StoreLimits;
 
 wasmtime::component::bindgen!({
-    path: "../../wit",
+    path: "../wit",
     world: "runtime",
 });
 
