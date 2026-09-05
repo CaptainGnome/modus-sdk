@@ -2,17 +2,20 @@
 
 Guest SDK and CLI for **Modus ABI 2** plugins: crate `modus-sdk`, binary `modus`, signing crate `modus-sign`, and the WIT contract in `wit/`.
 
-**Repos:** [modus-sdk](https://github.com/CaptainGnome/modus-sdk) (this repo) · docs hub [modus-docs](https://github.com/CaptainGnome/modus-docs)
+**Repos:** [modus-sdk](https://github.com/CaptainGnome/modus-sdk) (this repo) · docs hub [modus-docs](https://github.com/CaptainGnome/modus-docs) · examples [modus-examples](https://github.com/CaptainGnome/modus-examples) (S9)
 
-Author path: `new` → `dev` → `pack` → install `.mplug` into the host app. Language — Rust. Do not put secrets in the package.
+Author path: `new` → `dev` → `pack` → install `.mplug` into the **shipped** Modus host app. Language — Rust. Do not put secrets in the package.
 
 ## Clone
 
 ```powershell
 git clone https://github.com/CaptainGnome/modus-sdk.git
 git clone https://github.com/CaptainGnome/modus-docs.git
+git clone https://github.com/CaptainGnome/modus-examples.git
 cd modus-sdk
 ```
+
+`modus-examples` — educational dummy plugins (not the closed product `plugins/` tree).
 
 ## Layout
 
