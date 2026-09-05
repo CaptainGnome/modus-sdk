@@ -1,0 +1,461 @@
+package modus:abi@2.0.0;
+
+interface types {
+  record emote {
+    id: string,
+    alt: string,
+    url: option<string>,
+  }
+
+  record mention {
+    user-id: string,
+    display-name: string,
+  }
+
+  variant fragment {
+    text(string),
+    emote(emote),
+    mention(mention),
+    url(string),
+  }
+
+  record money {
+    amount: f64,
+    currency: string,
+  }
+
+  record message {
+    user-id: string,
+    display-name: string,
+    fragments: list<fragment>,
+    name-color: option<string>,
+    message-id: option<string>,
+    rewarded: bool,
+  }
+
+  record donation {
+    user-id: string,
+    display-name: string,
+    money: money,
+    fragments: list<fragment>,
+  }
+
+  record sub {
+    user-id: string,
+    display-name: string,
+    months: u32,
+    tier: option<string>,
+    gifted: bool,
+    gifter-id: option<string>,
+    gifter-name: option<string>,
+    fragments: list<fragment>,
+  }
+
+  record follow {
+    user-id: string,
+    display-name: string,
+  }
+
+  record raid {
+    from-user-id: string,
+    from-display-name: string,
+    viewers: u32,
+  }
+
+  record viewer-count {
+    count: u32,
+  }
+
+  record reward {
+    user-id: string,
+    display-name: string,
+    reward-id: string,
+    title: string,
+    cost: u32,
+    fragments: list<fragment>,
+    image-url: option<string>,
+  }
+
+  enum mod-action {
+    delete,
+    timeout,
+    ban,
+    unban,
+  }
+
+  record moderation {
+    action: mod-action,
+    target-user-id: string,
+    target-display-name: string,
+    moderator-id: option<string>,
+    moderator-name: option<string>,
+    message-id: option<string>,
+    duration-sec: option<u32>,
+  }
+
+  record custom-event {
+    kind: string,
+    fields: list<tuple<string, string>>,
+  }
+
+  enum system-code {
+    plugin-disabled,
+    plugin-crashed,
+    plugin-quarantined,
+    plugin-rollback,
+    plugin-reconnecting,
+    plugin-load-failed,
+    plugin-removed,
+    auth-connected,
+    auth-disconnected,
+    auth-revoked,
+    auth-login-failed,
+    network-resume,
+    ws-closed,
+    unknown,
+  }
+
+  record system-event {
+    code: system-code,
+    plugin-id: option<string>,
+    account-id: option<string>,
+    platform: option<string>,
+    detail: option<string>,
+  }
+
+  variant payload {
+    message(message),
+    donation(donation),
+    sub(sub),
+    follow(follow),
+    raid(raid),
+    viewer-count(viewer-count),
+    reward(reward),
+    moderation(moderation),
+    system(system-event),
+    custom(custom-event),
+  }
+}
+
+interface self-info {
+  plugin-id: func() -> string;
+  version: func() -> string;
+}
+
+interface log {
+  enum level {
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  log: func(level: level, message: string);
+}
+
+interface wait {
+  use types.{payload};
+
+  record source {
+    plugin-id: string,
+    platform: string,
+    channel: string,
+  }
+
+  record filter-flags {
+    hide-chat: bool,
+    skip-alert: bool,
+    highlight: bool,
+    mask: option<string>,
+  }
+
+  record event {
+    id: string,
+    ts: s64,
+    source: source,
+    payload: payload,
+    opaque: option<string>,
+    %flags: filter-flags,
+  }
+
+  record ws-frame {
+    handle: u32,
+    text: string,
+  }
+
+  enum act-kind {
+    send,
+    delete,
+    timeout,
+    ban,
+    unban,
+  }
+
+  record act-request {
+    id: string,
+    account-id: string,
+    platform: string,
+    channel: string,
+    kind: act-kind,
+    text: option<string>,
+    message-id: option<string>,
+    target-user-id: option<string>,
+    duration-sec: option<u32>,
+  }
+
+  record alert-command {
+    job-id: string,
+    event-id: string,
+    duration-ms: u32,
+  }
+
+  variant ready {
+    ws-text(ws-frame),
+    ws-closed(u32),
+    bus(event),
+    timer,
+    stop,
+    act(act-request),
+    settings,
+    resume,
+    ui(list<u8>),
+    media-ended(string),
+    alert-play(alert-command),
+    alert-stop(alert-command),
+  }
+
+  subscribe: func();
+  set-timer: func(ms: u32);
+  wait: func() -> ready;
+}
+
+interface bus-emit {
+  use types.{payload};
+
+  emit: func(
+    channel: string,
+    payload: payload,
+    opaque: option<string>
+  ) -> result<_, string>;
+}
+
+interface auth-token {
+  list-accounts: func() -> list<string>;
+  token: func(account-id: string) -> result<string, string>;
+}
+
+interface net-http {
+  record http-response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: list<u8>,
+  }
+
+  fetch: func(
+    method: string,
+    url: string,
+    headers: list<tuple<string, string>>,
+    body: list<u8>
+  ) -> result<http-response, string>;
+}
+
+interface net-ws {
+  connect: func(url: string) -> result<u32, string>;
+  send-text: func(handle: u32, message: string) -> result<_, string>;
+  close: func(handle: u32) -> result<_, string>;
+}
+
+interface clock {
+  sleep-ms: func(ms: u32);
+}
+
+interface settings {
+  get: func(key: string) -> option<string>;
+  set-label: func(key: string, text: string) -> result<_, string>;
+  set-label-i18n: func(key: string, label-key: string, params: option<string>) -> result<_, string>;
+}
+
+interface assets {
+  read: func(path: string) -> result<list<u8>, string>;
+}
+
+interface history-read {
+  use wait.{event};
+
+  record page {
+    events: list<event>,
+    next: option<string>,
+    /// event-id из `events`, уже показанные этим plugin_id (после successful complete).
+    alert-shown: list<string>,
+  }
+
+  read: func(cursor: option<string>, limit: u32) -> result<page, string>;
+}
+
+interface storage-kv {
+  get: func(key: string) -> result<option<string>, string>;
+  set: func(key: string, value: string) -> result<_, string>;
+  delete: func(key: string) -> result<_, string>;
+  list-keys: func(prefix: string) -> result<list<string>, string>;
+}
+
+interface chat-act {
+  use wait.{act-kind};
+
+  record act-job {
+    platform: string,
+    channel: string,
+    kind: act-kind,
+    text: option<string>,
+    message-id: option<string>,
+    target-user-id: option<string>,
+    duration-sec: option<u32>,
+  }
+
+  act: func(job: act-job) -> result<string, string>;
+}
+
+interface chat-complete {
+  complete: func(id: string, outcome: result<_, string>);
+}
+
+interface alert-enqueue {
+  enum priority {
+    follow,
+    sub,
+    raid,
+    donation,
+    reward,
+  }
+
+  record job {
+    event-id: string,
+    priority: priority,
+    duration-ms: u32,
+    title: string,
+    body: string,
+  }
+
+  enqueue: func(job: job) -> result<string, string>;
+  complete: func(job-id: string, outcome: result<_, string>) -> result<_, string>;
+}
+
+interface media-cache {
+  lookup: func(url: string) -> option<string>;
+  ensure: func(url: string) -> result<string, string>;
+  put: func(mime: string, bytes: list<u8>) -> result<string, string>;
+  release: func(key: string) -> result<_, string>;
+}
+
+interface media-audio {
+  variant spec {
+    asset(string),
+    url(string),
+    tts(string),
+  }
+
+  play: func(spec: spec) -> result<string, string>;
+  stop: func(id: string) -> result<_, string>;
+}
+
+interface catalog {
+  publish: func(name: string, payload: list<u8>) -> result<_, string>;
+  unpublish: func(name: string) -> result<_, string>;
+}
+
+interface ui-slot {
+  post: func(payload: list<u8>) -> result<_, string>;
+}
+
+interface bridge {
+  invoke: func(id: string, request-type: string, payload: list<u8>) -> result<list<u8>, string>;
+}
+
+interface media-embed {
+  hosts: func() -> list<string>;
+  allowed: func(url: string) -> bool;
+}
+
+interface rates-publish {
+  record rate {
+    %from: string,
+    %to: string,
+    value: f64,
+  }
+
+  publish: func(rates: list<rate>) -> result<_, string>;
+}
+
+/// Read-side FX: base currency + convert into base (floor minor).
+/// Rates table itself is filled by `rates-publish` / Core UI.
+interface rates {
+  /// ISO-4217 base from Core FX settings.
+  base: func() -> string;
+
+  /// `amount` in `from` → base, floored to minor units.
+  /// Missing / invalid rate → `err` (Core also notes missing for FX warnings).
+  convert-to-base: func(amount: f64, %from: string) -> result<f64, string>;
+}
+
+interface lifecycle {
+  init: func();
+  run: func();
+  shutdown: func();
+}
+
+/// Full guest surface. Roles are SDK feature presets, not separate worlds.
+/// Rights: manifest + deny on call (soft-link imports).
+world plugin {
+  import self-info;
+  import log;
+  import clock;
+  import wait;
+  import settings;
+  import assets;
+  import bus-emit;
+  import auth-token;
+  import net-http;
+  import net-ws;
+  import alert-enqueue;
+  import storage-kv;
+  import chat-act;
+  import chat-complete;
+  import media-cache;
+  import media-audio;
+  import catalog;
+  import ui-slot;
+  import history-read;
+  import bridge;
+  import media-embed;
+  import rates-publish;
+  import rates;
+  export lifecycle;
+}
+
+/// Host supersets; guest does not select this world.
+world runtime {
+  import self-info;
+  import log;
+  import clock;
+  import wait;
+  import settings;
+  import assets;
+  import bus-emit;
+  import auth-token;
+  import net-http;
+  import net-ws;
+  import alert-enqueue;
+  import storage-kv;
+  import chat-act;
+  import chat-complete;
+  import media-cache;
+  import media-audio;
+  import catalog;
+  import ui-slot;
+  import history-read;
+  import bridge;
+  import media-embed;
+  import rates-publish;
+  import rates;
+  export lifecycle;
+}

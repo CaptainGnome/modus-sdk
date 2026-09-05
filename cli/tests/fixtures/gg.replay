@@ -1,0 +1,4 @@
+{"type":"welcome","data":{"protocolVersion":2}}
+{"type":"success_auth","data":{"user_id":"1","user_name":"fixture"}}
+{"type":"success_join","data":{"channel_id":"42","name":"fixture","access_rights":20,"premium":false,"premiums":[],"payments":0}}
+{"type":"message","data":{"channel_id":"42","user_id":2,"user_name":"Viewer","user_rights":0,"premium":0,"premiums":[],"payments":0,"message_id":100,"text":"hello gg"}}

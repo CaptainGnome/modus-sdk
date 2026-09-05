@@ -1,0 +1,24 @@
+[package]
+name = "modus-sdk"
+version = "2.0.0"
+edition = "2021"
+description = "Guest SDK for Modus ABI 2 plugins"
+license = "MIT"
+
+[features]
+consumer = []
+emitter = []
+connector = []
+provider = []
+widget = []
+reader = []
+player = []
+bridge = []
+embedder = []
+rates = []
+alerter = []
+commander = []
+store = []
+
+[dependencies]
+wit-bindgen = "0.41"

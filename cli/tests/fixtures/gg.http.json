@@ -1,0 +1,36 @@
+{
+  "https://goodgame.ru/api/4/users/@me": {
+    "status": 200,
+    "body": {
+      "id": 1,
+      "username": "fixture",
+      "nickname": "fixture",
+      "chatToken": "fake-chat-token"
+    }
+  },
+  "https://goodgame.ru/api/4/streams/2/channel/fixture": {
+    "status": 200,
+    "body": {
+      "id": 42,
+      "key": "fixture",
+      "streamer": { "id": 1, "username": "fixture" }
+    }
+  },
+  "https://goodgame.ru/js/minified/global.json": {
+    "status": 200,
+    "body": {
+      "Smiles": [
+        {
+          "id": "874",
+          "name": "thup",
+          "premium": 0,
+          "paid": 0,
+          "donat": 0,
+          "animated": 0,
+          "img": "https://goodgame.ru/images/smiles/thup.png"
+        }
+      ],
+      "Channel_Smiles": {}
+    }
+  }
+}

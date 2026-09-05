@@ -1,0 +1,6 @@
+{
+  "https://api.twitch.tv/helix/users": {
+    "status": 200,
+    "body": {"data":[{"id":"1","login":"fixture"}]}
+  }
+}

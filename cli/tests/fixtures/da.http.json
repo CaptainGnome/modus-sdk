@@ -1,0 +1,26 @@
+{
+  "https://www.donationalerts.com/api/v1/user/oauth": {
+    "status": 200,
+    "body": {
+      "data": {
+        "id": 3,
+        "code": "fixture",
+        "name": "Fixture",
+        "avatar": "",
+        "email": "",
+        "socket_connection_token": "fake-socket-token"
+      }
+    }
+  },
+  "https://www.donationalerts.com/api/v1/centrifuge/subscribe": {
+    "status": 200,
+    "body": {
+      "channels": [
+        {
+          "channel": "$alerts:donation_3",
+          "token": "fake-channel-token"
+        }
+      ]
+    }
+  }
+}

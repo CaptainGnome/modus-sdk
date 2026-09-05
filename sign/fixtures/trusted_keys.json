@@ -1,0 +1,14 @@
+{
+  "keys": [
+    {
+      "alg": "ed25519",
+      "id": "fixture-test-key",
+      "issuer": "Modus Test",
+      "not_after": null,
+      "not_before": null,
+      "plugin_ids": [],
+      "pub": "4SgN1gFOnj1/ap2PViXP3o6j1IMyFJLlKpI6dv8+wMQ="
+    }
+  ],
+  "revoked": []
+}
