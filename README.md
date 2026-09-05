@@ -31,7 +31,7 @@ cargo run --manifest-path cli/Cargo.toml --release -- <command>
 
 ```toml
 [dependencies]
-modus-sdk = { path = "../modus-sdk/guest", default-features = false, features = ["consumer"] }
+modus-sdk = { path = "../../modus-sdk/guest", default-features = false, features = ["consumer"] }
 ```
 
 Exactly one role feature. Docs for authors: companion hub **modus-docs** (tutorial, ref, api).
