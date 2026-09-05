@@ -11,14 +11,14 @@ pub fn keygen(out: &Path, key_id: &str, issuer: &str) -> Result<(), String> {
         }
     }
     let key_json = serde_json::to_string_pretty(&key).map_err(|err| err.to_string())?;
-    fs::write(out, key_json).map_err(|err| format!("записать ключ: {err}"))?;
+    fs::write(out, key_json).map_err(|err| format!("write key: {err}"))?;
     let pub_path = out.with_extension("pub.json");
     let pub_json = serde_json::to_string_pretty(&serde_json::json!({
         "keys": [trusted],
         "revoked": []
     }))
     .map_err(|err| err.to_string())?;
-    fs::write(&pub_path, pub_json).map_err(|err| format!("записать pub: {err}"))?;
+    fs::write(&pub_path, pub_json).map_err(|err| format!("write pub: {err}"))?;
     println!("key {}", out.display());
     println!("trusted {}", pub_path.display());
     Ok(())
@@ -26,14 +26,14 @@ pub fn keygen(out: &Path, key_id: &str, issuer: &str) -> Result<(), String> {
 
 pub fn sign_mplug(path: &Path, key_path: &Path) -> Result<(), String> {
     let key = SigningKeyFile::load(key_path)?;
-    let bytes = fs::read(path).map_err(|err| format!("читать {}: {err}", path.display()))?;
+    let bytes = fs::read(path).map_err(|err| format!("read {}: {err}", path.display()))?;
     let signed = sign_package_bytes(&bytes, &key)?;
-    fs::write(path, signed).map_err(|err| format!("записать {}: {err}", path.display()))?;
+    fs::write(path, signed).map_err(|err| format!("write {}: {err}", path.display()))?;
     Ok(())
 }
 
 pub fn verify_mplug(path: &Path, trusted_path: Option<&Path>) -> Result<SignatureStatus, String> {
-    let bytes = fs::read(path).map_err(|err| format!("читать {}: {err}", path.display()))?;
+    let bytes = fs::read(path).map_err(|err| format!("read {}: {err}", path.display()))?;
     let trusted = load_trusted(trusted_path)?;
     let plugin_id = crate::check::check_mplug(path).ok().map(|m| m.id);
     let meta = verify_package_bytes(

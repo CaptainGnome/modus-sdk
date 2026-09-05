@@ -89,14 +89,14 @@ impl TrustedKeys {
 
     pub fn verifying_key(&self, key: &TrustedKey) -> Result<VerifyingKey, String> {
         if key.alg != "ed25519" {
-            return Err(format!("неизвестный alg: {}", key.alg));
+            return Err(format!("unknown alg: {}", key.alg));
         }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(key.pub_key.trim())
             .map_err(|err| format!("pub base64: {err}"))?;
         let arr: [u8; 32] = bytes
             .try_into()
-            .map_err(|_| "pub должен быть 32 байта".to_string())?;
+            .map_err(|_| "pub must be 32 bytes".to_string())?;
         VerifyingKey::from_bytes(&arr).map_err(|err| format!("pub key: {err}"))
     }
 }
@@ -118,14 +118,14 @@ impl SigningKeyFile {
 
     pub fn signing_key(&self) -> Result<SigningKey, String> {
         if self.alg != "ed25519" {
-            return Err(format!("неизвестный alg: {}", self.alg));
+            return Err(format!("unknown alg: {}", self.alg));
         }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(self.private_key.trim())
             .map_err(|err| format!("private base64: {err}"))?;
         let arr: [u8; 32] = bytes
             .try_into()
-            .map_err(|_| "private должен быть 32 байта".to_string())?;
+            .map_err(|_| "private must be 32 bytes".to_string())?;
         Ok(SigningKey::from_bytes(&arr))
     }
 

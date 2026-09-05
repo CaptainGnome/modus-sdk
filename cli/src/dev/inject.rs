@@ -47,7 +47,7 @@ pub fn parse_inject(text: &str) -> Result<Vec<EmitRequest>, String> {
         out.push(parse_one(value)?);
     }
     if out.is_empty() {
-        return Err("inject: пустой JSON".into());
+        return Err("inject: empty JSON".into());
     }
     Ok(out)
 }

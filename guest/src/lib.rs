@@ -1,5 +1,5 @@
-//! Guest SDK ABI 2. Автор не копирует WIT и не пишет `wit_bindgen::generate`.
-//! Одна feature = пресет кода; WIT-world всегда `plugin` (полный guest API).
+//! Guest SDK ABI 2. Authors do not copy WIT or write `wit_bindgen::generate`.
+//! One feature = code preset; WIT world is always `plugin` (full guest API).
 
 #[cfg(all(
     feature = "consumer",
@@ -18,7 +18,7 @@
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "emitter",
@@ -36,7 +36,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "connector",
@@ -53,7 +53,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "provider",
@@ -69,7 +69,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "widget",
@@ -84,7 +84,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "reader",
@@ -98,7 +98,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "player",
@@ -111,7 +111,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "bridge",
@@ -123,7 +123,7 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "embedder",
@@ -134,19 +134,19 @@ compile_error!("modus-sdk: ровно одна role-feature");
         feature = "store",
     )
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "rates",
     any(feature = "alerter", feature = "commander", feature = "store")
 ))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(feature = "alerter", any(feature = "commander", feature = "store")))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(feature = "commander", feature = "store"))]
-compile_error!("modus-sdk: ровно одна role-feature");
+compile_error!("modus-sdk: exactly one role-feature");
 
 mod canon;
 mod error;
@@ -329,7 +329,7 @@ pub use bindings::modus::abi::chat_act;
 #[cfg(feature = "store")]
 pub use bindings::modus::abi::storage_kv;
 
-/// Экспорт `lifecycle` гостя. Пишите `modus_sdk::export!(MyPlugin);`
+/// Export guest `lifecycle`. Write `modus_sdk::export!(MyPlugin);`
 #[cfg(any(
     feature = "consumer",
     feature = "emitter",

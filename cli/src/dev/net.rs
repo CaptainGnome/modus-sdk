@@ -75,10 +75,10 @@ impl DevNet {
             .connect_timeout(HTTP_TIMEOUT)
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
                 if attempt.previous().len() >= MAX_REDIRECTS {
-                    return attempt.error("слишком длинная цепочка редиректов");
+                    return attempt.error("redirect chain too long");
                 }
                 if https_url_host(attempt.url().as_str()).is_err() {
-                    return attempt.error("редирект не https");
+                    return attempt.error("redirect is not https");
                 }
                 attempt.follow()
             }))
@@ -106,7 +106,7 @@ impl DevNet {
         body: &[u8],
     ) -> Result<HttpResponse, String> {
         if body.len() > MAX_BODY {
-            return Err("тело слишком большое".into());
+            return Err("body too large".into());
         }
         let key = url_without_query(url);
         let fixture = self.http_fixtures.get(&key);
@@ -114,7 +114,7 @@ impl DevNet {
         let current = self.inflight_http.fetch_add(1, Ordering::SeqCst);
         if current >= MAX_HTTP {
             self.inflight_http.fetch_sub(1, Ordering::SeqCst);
-            return Err("квота http".into());
+            return Err("http quota".into());
         }
         let result = if let Some(fixture) = fixture {
             Ok(HttpResponse {
@@ -139,7 +139,7 @@ impl DevNet {
         let mut req = self.client.request(
             method
                 .parse::<reqwest::Method>()
-                .map_err(|_| "неверный метод".to_string())?,
+                .map_err(|_| "invalid method".to_string())?,
             url,
         );
         for (k, v) in headers {
@@ -159,7 +159,7 @@ impl DevNet {
             .collect();
         let bytes = resp.bytes().map_err(|err| err.to_string())?;
         if bytes.len() > MAX_BODY {
-            return Err("ответ слишком большой".into());
+            return Err("response too large".into());
         }
         Ok(HttpResponse {
             status,
@@ -173,7 +173,7 @@ impl DevNet {
         {
             let sockets = self.sockets.lock().map_err(|err| err.to_string())?;
             if sockets.len() as u32 >= MAX_WS {
-                return Err("квота ws".into());
+                return Err("ws quota".into());
             }
         }
         if let Some(frames) = &self.replay {
@@ -256,12 +256,12 @@ impl DevNet {
                     text: message.to_string(),
                     reply: reply_tx,
                 })
-                .map_err(|_| "ws закрыт".to_string())?;
+                .map_err(|_| "ws closed".to_string())?;
                 reply_rx
                     .recv_timeout(WS_WRITE_TIMEOUT)
                     .map_err(|_| "ws write timeout".to_string())?
             }
-            None => Err("нет сокета".into()),
+            None => Err("no socket".into()),
         }
     }
 
@@ -373,7 +373,7 @@ fn tcp_clone(
             .get_ref()
             .try_clone()
             .map_err(|err| err.to_string()),
-        _ => Err("нет tcp для ws".into()),
+        _ => Err("no tcp for ws".into()),
     }
 }
 
@@ -397,12 +397,12 @@ pub fn parse_http_fixtures(text: &str) -> Result<HashMap<String, HttpFixture>, S
         serde_json::from_str(text).map_err(|err| format!("http-file: {err}"))?;
     let obj = value
         .as_object()
-        .ok_or_else(|| "http-file: нужен объект".to_string())?;
+        .ok_or_else(|| "http-file: object required".to_string())?;
     let mut out = HashMap::new();
     for (url, spec) in obj {
         let spec = spec
             .as_object()
-            .ok_or_else(|| format!("http-file: {url} не объект"))?;
+            .ok_or_else(|| format!("http-file: {url} is not an object"))?;
         let status = spec
             .get("status")
             .and_then(Value::as_u64)
@@ -427,7 +427,7 @@ pub fn parse_http_fixtures(text: &str) -> Result<HashMap<String, HttpFixture>, S
             Some(other) => serde_json::to_vec(other).map_err(|err| format!("http-file: {err}"))?,
         };
         if body.len() > MAX_BODY {
-            return Err("ответ слишком большой".into());
+            return Err("response too large".into());
         }
         out.insert(
             url_without_query(url),

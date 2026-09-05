@@ -67,20 +67,20 @@ fn read_i18n_dir(plugin_dir: &Path) -> Result<Catalogs, String> {
         let name = path
             .file_name()
             .and_then(|s| s.to_str())
-            .ok_or_else(|| "i18n: плохое имя файла".to_string())?;
+            .ok_or_else(|| "i18n: bad file name".to_string())?;
         let code = name
             .strip_suffix(".json")
-            .ok_or_else(|| format!("i18n: нужен .json ({name})"))?;
+            .ok_or_else(|| format!("i18n: need .json ({name})"))?;
         if !is_locale_code(code) {
-            return Err(format!("плохой locale i18n: {code}"));
+            return Err(format!("bad i18n locale: {code}"));
         }
         let bytes = fs::read(&path).map_err(|err| format!("i18n: {err}"))?;
         if bytes.len() > I18N_MAX_BYTES {
-            return Err("i18n слишком большой".into());
+            return Err("i18n too large".into());
         }
         let catalog = parse_catalog(&bytes)?;
         if catalogs.insert(code.to_string(), catalog).is_some() {
-            return Err(format!("дубль i18n locale: {code}"));
+            return Err(format!("duplicate i18n locale: {code}"));
         }
     }
     Ok(catalogs)
@@ -96,7 +96,7 @@ pub fn check_plugin_dir(plugin_dir: &Path, component: &[u8]) -> Result<Manifest,
     let schema = if settings_path.is_file() {
         let bytes = fs::read(&settings_path).map_err(|err| format!("settings.json: {err}"))?;
         if bytes.len() > SCHEMA_MAX_BYTES {
-            return Err("settings.json слишком большой".into());
+            return Err("settings.json too large".into());
         }
         check_settings_bytes(Some(&bytes))?
     } else {
@@ -111,8 +111,8 @@ pub fn check_plugin_dir(plugin_dir: &Path, component: &[u8]) -> Result<Manifest,
 }
 
 pub fn check_mplug(path: &Path) -> Result<Manifest, String> {
-    let file = fs::File::open(path).map_err(|err| format!("не открыть пакет: {err}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|err| format!("пакет не zip: {err}"))?;
+    let file = fs::File::open(path).map_err(|err| format!("cannot open package: {err}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|err| format!("package is not zip: {err}"))?;
     let mut manifest = None;
     let mut wasm = None;
     let mut schema = None;
@@ -134,55 +134,55 @@ pub fn check_mplug(path: &Path) -> Result<Manifest, String> {
                 let mut buf = Vec::new();
                 entry
                     .read_to_end(&mut buf)
-                    .map_err(|err| format!("чтение manifest: {err}"))?;
+                    .map_err(|err| format!("read manifest: {err}"))?;
                 manifest = Some(buf);
             }
             "module.wasm" => {
                 let mut buf = Vec::new();
                 entry
                     .read_to_end(&mut buf)
-                    .map_err(|err| format!("чтение module.wasm: {err}"))?;
+                    .map_err(|err| format!("read module.wasm: {err}"))?;
                 wasm = Some(buf);
             }
             SETTINGS_ENTRY => {
                 if entry.size() > SCHEMA_MAX_BYTES as u64 {
-                    return Err("settings.json слишком большой".into());
+                    return Err("settings.json too large".into());
                 }
                 let mut buf = Vec::new();
                 entry
                     .read_to_end(&mut buf)
-                    .map_err(|err| format!("чтение settings.json: {err}"))?;
+                    .map_err(|err| format!("read settings.json: {err}"))?;
                 schema = Some(buf);
             }
             PANEL_JSON => {
                 if entry.size() > PANEL_MAX_BYTES as u64 {
-                    return Err("panel.json слишком большой".into());
+                    return Err("panel.json too large".into());
                 }
                 let mut buf = Vec::new();
                 entry
                     .read_to_end(&mut buf)
-                    .map_err(|err| format!("чтение panel.json: {err}"))?;
+                    .map_err(|err| format!("read panel.json: {err}"))?;
                 panel_json = Some(buf);
             }
             name if name.starts_with(I18N_PREFIX) => {
                 let code = locale_code_from_entry(name)
-                    .ok_or_else(|| format!("плохой путь i18n: {name}"))?;
+                    .ok_or_else(|| format!("bad i18n path: {name}"))?;
                 if !is_locale_code(code) {
-                    return Err(format!("плохой locale i18n: {code}"));
+                    return Err(format!("bad i18n locale: {code}"));
                 }
                 if entry.size() > I18N_MAX_BYTES as u64 {
-                    return Err("i18n слишком большой".into());
+                    return Err("i18n too large".into());
                 }
                 let mut buf = Vec::new();
                 entry
                     .read_to_end(&mut buf)
-                    .map_err(|err| format!("чтение i18n: {err}"))?;
+                    .map_err(|err| format!("read i18n: {err}"))?;
                 if buf.len() > I18N_MAX_BYTES {
-                    return Err("i18n слишком большой".into());
+                    return Err("i18n too large".into());
                 }
                 let catalog = parse_catalog(&buf)?;
                 if catalogs.insert(code.to_string(), catalog).is_some() {
-                    return Err(format!("дубль i18n locale: {code}"));
+                    return Err(format!("duplicate i18n locale: {code}"));
                 }
             }
             name if name.starts_with("assets/panel/") => {
@@ -196,11 +196,11 @@ pub fn check_mplug(path: &Path) -> Result<Manifest, String> {
             _ => {}
         }
     }
-    let wasm = wasm.ok_or_else(|| "в пакете нет module.wasm".to_string())?;
+    let wasm = wasm.ok_or_else(|| "package missing module.wasm".to_string())?;
     if wasm.is_empty() {
-        return Err("пустой module.wasm".into());
+        return Err("empty module.wasm".into());
     }
-    let manifest = manifest.ok_or_else(|| "в пакете нет manifest".to_string())?;
+    let manifest = manifest.ok_or_else(|| "package missing manifest".to_string())?;
     let parsed = Manifest::parse(&manifest)?;
     check_manifest_and_wasm(&parsed, &wasm)?;
     let schema = check_settings_bytes(schema.as_deref())?;
@@ -209,15 +209,15 @@ pub fn check_mplug(path: &Path) -> Result<Manifest, String> {
         let entry = format!("assets/{rel}");
         let mut file = archive
             .by_name(&entry)
-            .map_err(|_| format!("нет {entry}"))?;
+            .map_err(|_| format!("missing {entry}"))?;
         if file.size() > LOGO_MAX_BYTES as u64 {
-            return Err("platform_logo слишком большой".into());
+            return Err("platform_logo too large".into());
         }
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)
-            .map_err(|err| format!("чтение platform_logo: {err}"))?;
+            .map_err(|err| format!("read platform_logo: {err}"))?;
         if buf.len() > LOGO_MAX_BYTES {
-            return Err("platform_logo слишком большой".into());
+            return Err("platform_logo too large".into());
         }
     }
     let keys = collect_i18n_keys(&parsed, schema.as_ref(), panel.as_ref());
@@ -235,9 +235,9 @@ fn check_platform_logo_dir(plugin_dir: &Path, manifest: &Manifest) -> Result<(),
     for part in rel.split('/') {
         path.push(part);
     }
-    let bytes = fs::read(&path).map_err(|_| format!("нет assets/{rel}"))?;
+    let bytes = fs::read(&path).map_err(|_| format!("missing assets/{rel}"))?;
     if bytes.len() > LOGO_MAX_BYTES {
-        return Err("platform_logo слишком большой".into());
+        return Err("platform_logo too large".into());
     }
     Ok(())
 }
@@ -247,7 +247,7 @@ fn check_panel_dir(plugin_dir: &Path, manifest: &Manifest) -> Result<Option<Pane
     let json = if json_path.is_file() {
         let bytes = fs::read(&json_path).map_err(|err| format!("panel.json: {err}"))?;
         if bytes.len() > PANEL_MAX_BYTES {
-            return Err("panel.json слишком большой".into());
+            return Err("panel.json too large".into());
         }
         Some(bytes)
     } else {
@@ -268,7 +268,7 @@ fn check_panel_kind(
         return Ok(None);
     }
     if panel_json.is_some() && has_panel_html {
-        return Err("panel: один режим native или web".into());
+        return Err("panel: one mode native or web".into());
     }
     if let Some(bytes) = panel_json {
         return Ok(Some(PanelSchema::parse(bytes)?));
@@ -279,12 +279,12 @@ fn check_panel_kind(
     if manifest.is_web() && has_web_html {
         return Ok(None);
     }
-    Err("нет panel.json и нет страницы panel".into())
+    Err("missing panel.json and panel page".into())
 }
 
 fn validate_entry_name(name: &str) -> Result<(), String> {
     if name.contains('\\') || name.contains("..") || name.starts_with('/') {
-        return Err("небезопасный путь в zip".into());
+        return Err("unsafe path in zip".into());
     }
     if name == "manifest" || name == "module.wasm" || name == "signature" {
         return Ok(());
@@ -292,5 +292,5 @@ fn validate_entry_name(name: &str) -> Result<(), String> {
     if name == "assets" || name == "assets/" || name.starts_with("assets/") {
         return Ok(());
     }
-    Err(format!("лишний файл в пакете: {name}"))
+    Err(format!("extra file in package: {name}"))
 }

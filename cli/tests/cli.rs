@@ -549,9 +549,9 @@ modus_sdk::export!(Plugin);
             "--replay",
             replay.to_str().unwrap(),
         ],
-        "вне манифеста",
+        "not in manifest",
     );
-    assert!(out.contains("вне манифеста"), "{out}");
+    assert!(out.contains("not in manifest"), "{out}");
 }
 
 #[test]
@@ -698,7 +698,7 @@ fn check_rejects_tampered_signature() {
         "--trusted-keys",
         trusted.to_str().unwrap(),
     ]);
-    assert!(err.contains("подпись: Invalid"), "{err}");
+    assert!(err.contains("signature: Invalid"), "{err}");
 }
 
 fn tamper_signature_digest(mplug: &Path) {
@@ -754,7 +754,7 @@ fn new_store_dev_writes_kv() {
     ]);
     let out = wait_dev_output(&["dev", dir.to_str().unwrap()], "boots 1");
     assert!(out.contains("boots 1"), "{out}");
-    assert!(!out.contains("нет соединения"), "{out}");
+    assert!(!out.contains("no connection"), "{out}");
 }
 
 #[test]
@@ -826,7 +826,7 @@ fn new_commander_dev_acts() {
         "chat.act",
     );
     assert!(out.contains("chat.act"), "{out}");
-    assert!(!out.contains("нет соединения"), "{out}");
+    assert!(!out.contains("no connection"), "{out}");
 }
 
 #[test]
@@ -906,9 +906,9 @@ modus_sdk::export!(Plugin);
     .unwrap();
     let out = wait_dev_output(
         &["dev", dir.to_str().unwrap()],
-        "нет гранта storage.kv",
+        "no grant storage.kv",
     );
-    assert!(out.contains("нет гранта storage.kv"), "{out}");
+    assert!(out.contains("no grant storage.kv"), "{out}");
 }
 
 #[test]

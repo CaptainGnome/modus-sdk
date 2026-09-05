@@ -29,14 +29,14 @@ pub fn compile_component(plugin_dir: &Path) -> Result<Vec<u8>, String> {
 
 pub fn compile_component_profile(plugin_dir: &Path, profile: Profile) -> Result<Vec<u8>, String> {
     if !plugin_dir.join("Cargo.toml").is_file() {
-        return Err(format!("нет Cargo.toml в {}", plugin_dir.display()));
+        return Err(format!("missing Cargo.toml in {}", plugin_dir.display()));
     }
     let package_name = crate_package_name(plugin_dir)?;
     cargo_build(plugin_dir, profile)?;
     let wasm_path = wasm_artifact(plugin_dir, &package_name, profile);
     let module = fs::read(&wasm_path).map_err(|err| {
         format!(
-            "нет {}: {err}. Нужен target wasm32-unknown-unknown",
+            "missing {}: {err}. Need target wasm32-unknown-unknown",
             wasm_path.display()
         )
     })?;
@@ -45,7 +45,7 @@ pub fn compile_component_profile(plugin_dir: &Path, profile: Profile) -> Result<
 
 pub fn pack(plugin_dir: &Path) -> Result<PathBuf, String> {
     if !plugin_dir.join("manifest").is_file() {
-        return Err(format!("нет manifest в {}", plugin_dir.display()));
+        return Err(format!("missing manifest in {}", plugin_dir.display()));
     }
     let component = compile_component(plugin_dir)?;
     check_plugin_dir(plugin_dir, &component)?;
@@ -53,7 +53,7 @@ pub fn pack(plugin_dir: &Path) -> Result<PathBuf, String> {
     let plugin_name = plugin_dir
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| "плохое имя каталога плагина".to_string())?;
+        .ok_or_else(|| "bad plugin directory name".to_string())?;
     let dist = plugin_dir.join("dist");
     fs::create_dir_all(&dist).map_err(|err| format!("dist: {err}"))?;
     let out = dist.join(format!("{plugin_name}.mplug"));
@@ -75,7 +75,7 @@ fn cargo_build(plugin_dir: &Path, profile: Profile) -> Result<(), String> {
     }
     let status = cmd.status().map_err(|err| format!("cargo: {err}"))?;
     if !status.success() {
-        return Err("cargo build не удался".into());
+        return Err("cargo build failed".into());
     }
     Ok(())
 }
@@ -89,7 +89,7 @@ pub fn crate_package_name(plugin_dir: &Path) -> Result<String, String> {
         .and_then(|pkg| pkg.get("name"))
         .and_then(|name| name.as_str())
         .map(str::to_string)
-        .ok_or_else(|| "Cargo.toml: нет package.name".to_string())
+        .ok_or_else(|| "Cargo.toml: missing package.name".to_string())
 }
 
 fn wasm_artifact(plugin_dir: &Path, package_name: &str, profile: Profile) -> PathBuf {
@@ -102,7 +102,7 @@ fn wasm_artifact(plugin_dir: &Path, package_name: &str, profile: Profile) -> Pat
 
 fn write_mplug(out: &Path, plugin_dir: &Path, component: &[u8]) -> Result<(), String> {
     let manifest = fs::read(plugin_dir.join("manifest")).map_err(|err| format!("manifest: {err}"))?;
-    let file = fs::File::create(out).map_err(|err| format!("создать {}: {err}", out.display()))?;
+    let file = fs::File::create(out).map_err(|err| format!("create {}: {err}", out.display()))?;
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     zip.start_file("manifest", opts)
@@ -144,7 +144,7 @@ fn add_assets_dir(
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if name == "." || name == ".." || name.contains('\\') || name.contains("..") {
-            return Err(format!("плохой путь в assets: {name}"));
+            return Err(format!("bad path in assets: {name}"));
         }
         let rel = prefix.join(&*name);
         let rel_name = rel.to_string_lossy().replace('\\', "/");
@@ -152,7 +152,7 @@ fn add_assets_dir(
         if path.is_dir() {
             add_assets_dir(zip, opts, &path, &rel)?;
         } else {
-            let bytes = fs::read(&path).map_err(|err| format!("читать {}: {err}", path.display()))?;
+            let bytes = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
             zip.start_file(&rel_name, opts)
                 .map_err(|err| format!("zip {rel_name}: {err}"))?;
             zip.write_all(&bytes)

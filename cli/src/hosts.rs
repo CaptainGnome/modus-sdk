@@ -17,14 +17,14 @@ impl HostSpec {
     pub fn parse(raw: &str) -> Result<Self, String> {
         let raw = raw.trim().to_lowercase();
         if raw.is_empty() {
-            return Err("пустой хост".into());
+            return Err("empty host".into());
         }
         if raw == "*" || raw.ends_with(".*") || raw == "*.com" || raw == "*.ru" {
-            return Err("слишком широкий хост".into());
+            return Err("host too broad".into());
         }
         let (host_part, port) = if let Some((h, p)) = raw.rsplit_once(':') {
             if p.chars().all(|c| c.is_ascii_digit()) {
-                let port: u16 = p.parse().map_err(|_| "неверный порт".to_string())?;
+                let port: u16 = p.parse().map_err(|_| "invalid port".to_string())?;
                 (h.to_string(), port)
             } else {
                 (raw.clone(), 443)
@@ -39,7 +39,7 @@ impl HostSpec {
             host_part
         };
         if name.is_empty() || name.starts_with('.') || name.contains('*') {
-            return Err("некорректный хост".into());
+            return Err("invalid host".into());
         }
         Ok(Self {
             name,
@@ -78,26 +78,26 @@ pub fn require_broker_url(raw: &str, hosts: &[String]) -> Result<(), String> {
     let url = Url::parse(raw).map_err(|err| format!("broker_url: {err}"))?;
     let host = url
         .host_str()
-        .ok_or_else(|| "broker_url: нет хоста".to_string())?
+        .ok_or_else(|| "broker_url: missing host".to_string())?
         .to_lowercase();
     let port = url.port().unwrap_or(match url.scheme() {
         "https" => 443,
         "http" => 80,
-        _ => return Err("broker_url: только http(s)".into()),
+        _ => return Err("broker_url: http(s) only".into()),
     });
     match url.scheme() {
         "https" => {}
         "http" => {
             if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-                return Err("broker_url: http только на loopback".into());
+                return Err("broker_url: http only on loopback".into());
             }
         }
-        _ => return Err("broker_url: только http(s)".into()),
+        _ => return Err("broker_url: http(s) only".into()),
     }
     let specs: Result<Vec<_>, _> = hosts.iter().map(|h| HostSpec::parse(h)).collect();
     let specs = specs?;
     if !specs.iter().any(|s| s.matches(&host, port)) {
-        return Err(format!("broker_url: хост {host} не в allowlist манифеста"));
+        return Err(format!("broker_url: host {host} not in manifest allowlist"));
     }
     Ok(())
 }
@@ -105,17 +105,17 @@ pub fn require_broker_url(raw: &str, hosts: &[String]) -> Result<(), String> {
 pub fn require_https_host(raw: &str, label: &str, hosts: &[String]) -> Result<(), String> {
     let url = Url::parse(raw).map_err(|err| format!("{label}: {err}"))?;
     if url.scheme() != "https" {
-        return Err(format!("{label} должен быть https"));
+        return Err(format!("{label} must be https"));
     }
     let host = url
         .host_str()
-        .ok_or_else(|| format!("{label}: нет хоста"))?
+        .ok_or_else(|| format!("{label}: missing host"))?
         .to_lowercase();
     let port = url.port().unwrap_or(443);
     let specs: Result<Vec<_>, _> = hosts.iter().map(|h| HostSpec::parse(h)).collect();
     let specs = specs?;
     if !specs.iter().any(|s| s.matches(&host, port)) {
-        return Err(format!("{label}: хост {host} не в allowlist манифеста"));
+        return Err(format!("{label}: host {host} not in manifest allowlist"));
     }
     Ok(())
 }
@@ -124,17 +124,17 @@ pub fn https_url_host(url: &str) -> Result<(String, u16), String> {
     let parsed = Url::parse(url).map_err(|err| format!("url: {err}"))?;
     match parsed.scheme() {
         "https" | "wss" => {}
-        _ => return Err("только https/wss".into()),
+        _ => return Err("https/wss only".into()),
     }
     let host = parsed
         .host_str()
-        .ok_or_else(|| "нет хоста".to_string())?
+        .ok_or_else(|| "missing host".to_string())?
         .to_lowercase();
     if parsed
         .host()
         .is_some_and(|h| matches!(h, url::Host::Ipv4(_) | url::Host::Ipv6(_)))
     {
-        return Err("литеральный IP запрещён".into());
+        return Err("literal IP forbidden".into());
     }
     let port = parsed.port().unwrap_or(443);
     Ok((host, port))
@@ -191,10 +191,10 @@ pub fn check_dev_target(
 ) -> Result<(String, u16), String> {
     let (host, port) = https_url_host(url)?;
     if is_blocked_name(&host) {
-        return Err(format!("запрещённый адрес {host}"));
+        return Err(format!("forbidden address {host}"));
     }
     if !allowed_by_manifest(&host, port, specs) {
-        return Err(format!("хост {host} вне манифеста"));
+        return Err(format!("host {host} not in manifest"));
     }
     if resolve {
         let addrs = resolve_addrs(&host, port)?;
@@ -202,11 +202,11 @@ pub fn check_dev_target(
         for addr in addrs {
             any = true;
             if forbidden_ip(addr.ip()) {
-                return Err(format!("запрещённый адрес {}", addr.ip()));
+                return Err(format!("forbidden address {}", addr.ip()));
             }
         }
         if !any {
-            return Err(format!("DNS {host}: нет адресов"));
+            return Err(format!("DNS {host}: no addresses"));
         }
     }
     Ok((host, port))
@@ -228,7 +228,7 @@ fn resolve_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     match rx.recv_timeout(DNS_TIMEOUT) {
         Ok(Ok(addrs)) => Ok(addrs),
         Ok(Err(err)) => Err(format!("DNS {host}: {err}")),
-        Err(_) => Err(format!("DNS {host}: таймаут")),
+        Err(_) => Err(format!("DNS {host}: timeout")),
     }
 }
 
@@ -244,11 +244,11 @@ mod tests {
     fn rejects_http_and_literal_ip() {
         assert_eq!(
             https_url_host("http://example.com/").unwrap_err(),
-            "только https/wss"
+            "https/wss only"
         );
         assert_eq!(
             https_url_host("wss://127.0.0.1/").unwrap_err(),
-            "литеральный IP запрещён"
+            "literal IP forbidden"
         );
     }
 
@@ -257,9 +257,9 @@ mod tests {
         let specs = specs(&["example.com"]);
         check_dev_target("wss://example.com/", &specs, false).unwrap();
         let err = check_dev_target("wss://evil.example/", &specs, false).unwrap_err();
-        assert!(err.contains("вне манифеста"), "{err}");
+        assert!(err.contains("not in manifest"), "{err}");
         let err = check_dev_target("wss://localhost/", &specs, false).unwrap_err();
-        assert!(err.starts_with("запрещённый адрес"), "{err}");
+        assert!(err.starts_with("forbidden address"), "{err}");
     }
 
     #[test]

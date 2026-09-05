@@ -59,20 +59,20 @@ pub struct NewArgs {
 pub fn scaffold(args: NewArgs) -> Result<PathBuf, String> {
     if let Some(lang) = args.lang.as_deref() {
         if !lang.eq_ignore_ascii_case("rust") {
-            return Err("S1 только Rust".into());
+            return Err("S1 Rust only".into());
         }
     }
     if args.mode.is_some() && args.role != Role::Panel {
-        return Err("mode только для panel".into());
+        return Err("mode is only for panel".into());
     }
     if !is_plugin_id(&args.id) {
-        return Err("plugin id: нужен reverse-DNS (com.publisher.name)".into());
+        return Err("plugin id: reverse-DNS required (com.publisher.name)".into());
     }
     let crate_name = args
         .id
         .rsplit('.')
         .next()
-        .ok_or_else(|| "plugin id: нужен reverse-DNS (com.publisher.name)".to_string())?;
+        .ok_or_else(|| "plugin id: reverse-DNS required (com.publisher.name)".to_string())?;
     let dir = args
         .dir
         .unwrap_or_else(|| PathBuf::from(crate_name));
@@ -82,7 +82,7 @@ pub fn scaffold(args: NewArgs) -> Result<PathBuf, String> {
             .next()
             .is_none();
         if !empty {
-            return Err(format!("{} уже существует", dir.display()));
+            return Err(format!("{} already exists", dir.display()));
         }
     } else {
         fs::create_dir_all(&dir).map_err(|err| format!("{}: {err}", dir.display()))?;
@@ -518,7 +518,7 @@ impl Guest for Plugin {
     fn init() {
         log::log(Level::Info, "init");
         wait::subscribe();
-        let _ = settings::set_label("status", "ожидание событий");
+        let _ = settings::set_label("status", "waiting for events");
     }
 
     fn run() {
@@ -526,7 +526,7 @@ impl Guest for Plugin {
             match wait::wait() {
                 Ready::Stop => return,
                 Ready::Settings => {
-                    let _ = settings::set_label("status", "настройки обновлены");
+                    let _ = settings::set_label("status", "settings updated");
                 }
                 Ready::Bus(event) => {
                     let scene = match &event.payload {
@@ -543,7 +543,7 @@ impl Guest for Plugin {
                     match bridge::invoke("obs", "SetCurrentProgramScene", payload.as_bytes()) {
                         Ok(_) => {
                             log::log(Level::Info, &format!("scene {scene}"));
-                            let _ = settings::set_label("status", &format!("сцена: {scene}"));
+                            let _ = settings::set_label("status", &format!("scene: {scene}"));
                         }
                         Err(err) => {
                             log::log(Level::Warn, &err);
@@ -609,7 +609,7 @@ impl Guest for Plugin {
             match wait::wait() {
                 Ready::Stop => return,
                 Ready::Act(req) => {
-                    modus_sdk::chat_complete::complete(&req.id, Err("нет соединения"));
+                    modus_sdk::chat_complete::complete(&req.id, Err("no connection"));
                 }
                 Ready::Bus(_)
                 | Ready::WsText(_)
@@ -657,7 +657,7 @@ impl Guest for Plugin {
     fn run() {
         let accounts = auth_token::list_accounts();
         if accounts.is_empty() {
-            log::log(Level::Info, "нет аккаунта");
+            log::log(Level::Info, "no account");
             loop {
                 if matches!(wait::wait(), Ready::Stop) {
                     return;
@@ -675,12 +675,12 @@ fn run_account(account_id: &str) {
     loop {
         match run_session(account_id) {
             Outcome::Stopped => {
-                log::log(Level::Info, "остановлен");
+                log::log(Level::Info, "stopped");
                 return;
             }
             Outcome::Retry => {
                 if wait_backoff(backoff) {
-                    log::log(Level::Info, "остановлен");
+                    log::log(Level::Info, "stopped");
                     return;
                 }
                 backoff = next_backoff_ms(backoff);
@@ -705,7 +705,7 @@ fn run_session(account_id: &str) -> Outcome {
             }
             Ready::WsClosed(_) => {
                 let _ = net_ws::close(handle);
-                return fail("ws закрыт");
+                return fail("ws closed");
             }
             Ready::WsText(frame) => {
                 let payload = modus_sdk::text_message("dev", "dev", frame.text, None, None);
@@ -718,7 +718,7 @@ fn run_session(account_id: &str) -> Outcome {
                 }
             }
             Ready::Act(req) => {
-                modus_sdk::chat_complete::complete(&req.id, Err("нет соединения"));
+                modus_sdk::chat_complete::complete(&req.id, Err("no connection"));
             }
             Ready::Timer | Ready::Bus(_) | Ready::Settings | Ready::Resume | Ready::Ui(_) | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
@@ -925,7 +925,7 @@ impl Guest for Plugin {
     fn init() {
         log::log(Level::Info, "rates init");
         wait::subscribe();
-        let _ = settings::set_label("status", "старт");
+        let _ = settings::set_label("status", "start");
     }
 
     fn run() {
@@ -975,7 +975,7 @@ fn refresh() {
                 }
             },
             Ok(_) => {
-                let _ = settings::set_label("status", "пустой снимок");
+                let _ = settings::set_label("status", "empty snapshot");
             }
             Err(err) => {
                 let _ = settings::set_label("status", &err);
@@ -998,11 +998,11 @@ fn parse_rates(body: &[u8], base: &str) -> Result<Vec<Rate>, String> {
     let text = std::str::from_utf8(body).map_err(|_| "utf8".to_string())?;
     let mut rates = Vec::new();
     let Some(idx) = text.find("\"rates\"") else {
-        return Err("нет rates".into());
+        return Err("missing rates".into());
     };
     let rest = &text[idx..];
     let Some(start) = rest.find('{') else {
-        return Err("битый json".into());
+        return Err("bad json".into());
     };
     let slice = &rest[start + 1..];
     for part in slice.split(',') {
@@ -1323,7 +1323,7 @@ fn post_state(items: &[String]) {
         .collect::<Vec<_>>()
         .join(",");
     let body = format!(
-        "{{\"status\":{{\"text\":\"{} в очереди\"}},\"queue\":{{\"items\":[{}]}}}}",
+        "{{\"status\":{{\"text\":\"{} in queue\"}},\"queue\":{{\"items\":[{}]}}}}",
         items.len(),
         list
     );
@@ -1787,13 +1787,13 @@ fn write_bridge_settings(dir: &Path) -> Result<(), String> {
   "sections": [
     {
       "id": "connection",
-      "title": "Подключение",
+      "title": "Connection",
       "fields": [
         {
           "key": "host",
           "type": "string",
           "label": "Host",
-          "help": "Адрес локального софта. Сокет и framing держит Core.",
+          "help": "Local software URL. Socket and framing are owned by Core.",
           "default": "127.0.0.1"
         },
         {
@@ -1807,27 +1807,27 @@ fn write_bridge_settings(dir: &Path) -> Result<(), String> {
         {
           "key": "password",
           "type": "secret",
-          "label": "Пароль",
-          "help": "Секрет WebSocket / API. Для OBS — Tools → WebSocket Server Settings."
+          "label": "Password",
+          "help": "WebSocket / API secret. For OBS — Tools → WebSocket Server Settings."
         }
       ]
     },
     {
       "id": "scenes",
-      "title": "Сцены",
+      "title": "Scenes",
       "fields": [
         {
           "key": "follow_scene",
           "type": "string",
-          "label": "Сцена на follow",
-          "help": "Имя сцены в OBS. Пусто — не переключать на follow.",
+          "label": "Scene on follow",
+          "help": "OBS scene name. Empty — do not switch on follow.",
           "default": "Follow"
         },
         {
           "key": "status",
           "type": "label",
-          "label": "Статус",
-          "text": "ожидание событий"
+          "label": "Status",
+          "text": "waiting for events"
         }
       ]
     }
@@ -1849,20 +1849,20 @@ fn write_rates_settings(dir: &Path) -> Result<(), String> {
   "sections": [
     {
       "id": "main",
-      "title": "Курсы",
+      "title": "Rates",
       "fields": [
         {
           "key": "base",
           "type": "string",
-          "label": "Базовая валюта",
-          "help": "ISO-код, в который публикуются пары (from→base).",
+          "label": "Base currency",
+          "help": "ISO code pairs are published into (from→base).",
           "default": "RUB",
           "max_len": 3
         },
         {
           "key": "interval_hours",
           "type": "number",
-          "label": "Интервал, ч",
+          "label": "Interval, h",
           "default": 6,
           "min": 1,
           "max": 168
@@ -1870,8 +1870,8 @@ fn write_rates_settings(dir: &Path) -> Result<(), String> {
         {
           "key": "status",
           "type": "label",
-          "label": "Статус",
-          "text": "не запускался"
+          "label": "Status",
+          "text": "not started"
         }
       ]
     }
@@ -1891,7 +1891,7 @@ fn write_panel_json(dir: &Path) -> Result<(), String> {
         r#"{
   "version": 2,
   "blocks": [
-    { "id": "status", "type": "label", "text": "Очередь", "icon": "queue-list" },
+    { "id": "status", "type": "label", "text": "Queue", "icon": "queue-list" },
     { "id": "queue", "type": "list" },
     {
       "id": "notes",
@@ -1899,19 +1899,19 @@ fn write_panel_json(dir: &Path) -> Result<(), String> {
       "editable": true,
       "max_rows": 16,
       "columns": [
-        { "id": "title", "label": "Заметка", "type": "string", "max_len": 64 },
-        { "id": "done", "label": "Готово", "type": "bool" }
+        { "id": "title", "label": "Note", "type": "string", "max_len": 64 },
+        { "id": "done", "label": "Done", "type": "bool" }
       ],
       "toolbar": [
-        { "id": "add", "label": "Добавить", "icon": "plus" }
+        { "id": "add", "label": "Add", "icon": "plus" }
       ],
       "row_actions": [
-        { "id": "delete", "label": "Удалить", "icon": "trash" }
+        { "id": "delete", "label": "Delete", "icon": "trash" }
       ]
     },
     { "id": "bar", "type": "buttons", "items": [
-      { "id": "skip", "label": "Пропустить", "icon": "forward" },
-      { "id": "clear", "label": "Очистить", "icon": "x-mark" }
+      { "id": "skip", "label": "Skip", "icon": "forward" },
+      { "id": "clear", "label": "Clear", "icon": "x-mark" }
     ]}
   ]
 }

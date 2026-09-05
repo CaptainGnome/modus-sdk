@@ -47,22 +47,22 @@ impl LocalizedString {
 
 pub fn parse_catalog(bytes: &[u8]) -> Result<BTreeMap<String, String>, String> {
     if bytes.len() > I18N_MAX_BYTES {
-        return Err("i18n слишком большой".into());
+        return Err("i18n too large".into());
     }
     let raw: Value =
         serde_json::from_slice(bytes).map_err(|err| format!("i18n: {err}"))?;
     let object = raw
         .as_object()
-        .ok_or_else(|| "i18n: нужен объект".to_string())?;
+        .ok_or_else(|| "i18n: object required".to_string())?;
     let mut out = BTreeMap::new();
     for (key, value) in object {
         require_i18n_key(key)?;
         let text = value
             .as_str()
-            .ok_or_else(|| format!("i18n: значение {key} — строка"))?;
+            .ok_or_else(|| format!("i18n: value {key} must be a string"))?;
         require_plain(text, "i18n value")?;
         if text.len() > MAX_I18N_VALUE {
-            return Err(format!("i18n: значение {key} слишком длинное"));
+            return Err(format!("i18n: value {key} is too long"));
         }
         out.insert(key.clone(), text.to_string());
     }
@@ -94,17 +94,17 @@ pub fn is_locale_code(code: &str) -> bool {
 
 pub fn require_i18n_key(raw: &str) -> Result<(), String> {
     if raw.is_empty() || raw.len() > MAX_I18N_KEY {
-        return Err("i18n: плохой ключ".into());
+        return Err("i18n: bad key".into());
     }
     let bytes = raw.as_bytes();
     if !bytes[0].is_ascii_lowercase() {
-        return Err("i18n: плохой ключ".into());
+        return Err("i18n: bad key".into());
     }
     if !bytes
         .iter()
         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_' || *b == b'.')
     {
-        return Err("i18n: плохой ключ".into());
+        return Err("i18n: bad key".into());
     }
     Ok(())
 }
@@ -126,7 +126,7 @@ pub fn encode_label_i18n(key: &str, params: Option<Value>) -> Result<String, Str
     if let Some(Value::Object(_)) = params.as_ref() {
         // ok
     } else if params.is_some() {
-        return Err("params — JSON-объект".into());
+        return Err("params must be a JSON object".into());
     }
     let envelope = LabelI18nEnvelope {
         i18n: LabelI18nRef {
@@ -139,7 +139,7 @@ pub fn encode_label_i18n(key: &str, params: Option<Value>) -> Result<String, Str
 
 fn require_plain(raw: &str, label: &str) -> Result<(), String> {
     if raw.contains('<') || raw.contains('>') {
-        return Err(format!("HTML в {label}"));
+        return Err(format!("HTML in {label}"));
     }
     Ok(())
 }
@@ -150,10 +150,10 @@ pub fn validate_keys_against_en(keys: &[String], catalogs: &Catalogs) -> Result<
     }
     let en = catalogs
         .get(DEFAULT_PACK_LOCALE)
-        .ok_or_else(|| "нужен assets/i18n/en.json".to_string())?;
+        .ok_or_else(|| "need assets/i18n/en.json".to_string())?;
     for key in keys {
         if !en.contains_key(key) {
-            return Err(format!("i18n: нет ключа {key} в en.json"));
+            return Err(format!("i18n: missing key {key} in en.json"));
         }
     }
     Ok(())

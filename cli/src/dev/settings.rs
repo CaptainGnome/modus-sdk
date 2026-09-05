@@ -38,13 +38,13 @@ impl DevSettings {
                 serde_json::from_str(raw.trim()).map_err(|err| format!("settings JSON: {err}"))?;
             let map = obj
                 .as_object()
-                .ok_or_else(|| "settings: нужен JSON-объект".to_string())?;
+                .ok_or_else(|| "settings: need JSON object".to_string())?;
             let Some(schema) = &schema else {
-                return Err("settings: нет assets/settings.json".into());
+                return Err("settings: missing assets/settings.json".into());
             };
             for (key, value) in map {
                 if !schema.has_field(key) {
-                    return Err(format!("settings: нет поля {key}"));
+                    return Err(format!("settings: missing field {key}"));
                 }
                 let stored = schema.validate_value(key, value)?;
                 values.insert(key.clone(), stored);
@@ -76,18 +76,18 @@ impl DevSettings {
     }
 
     pub fn set_label(&self, key: &str, text: &str) -> Result<(), String> {
-        let schema = self.schema.as_ref().ok_or("нет схемы settings")?;
+        let schema = self.schema.as_ref().ok_or("missing settings schema")?;
         if !schema.is_label(key) {
             if schema.has_field(key) {
-                return Err("не label".into());
+                return Err("not a label".into());
             }
-            return Err("нет поля".into());
+            return Err("missing field".into());
         }
         if text.contains('<') || text.contains('>') {
-            return Err("HTML в label".into());
+            return Err("HTML in label".into());
         }
         if text.len() > MAX_LABEL {
-            return Err("label слишком длинный".into());
+            return Err("label too long".into());
         }
         let mut values = self.values.lock().map_err(|err| err.to_string())?;
         values.insert(key.to_string(), text.to_string());
@@ -100,12 +100,12 @@ impl DevSettings {
         label_key: &str,
         params: Option<String>,
     ) -> Result<(), String> {
-        let schema = self.schema.as_ref().ok_or("нет схемы settings")?;
+        let schema = self.schema.as_ref().ok_or("missing settings schema")?;
         if !schema.is_label(key) {
             if schema.has_field(key) {
-                return Err("не label".into());
+                return Err("not a label".into());
             }
-            return Err("нет поля".into());
+            return Err("missing field".into());
         }
         let params_value = match params.as_deref() {
             None => None,
@@ -113,14 +113,14 @@ impl DevSettings {
                 let value: Value =
                     serde_json::from_str(raw).map_err(|_| "params — JSON".to_string())?;
                 if !value.is_object() {
-                    return Err("params — JSON-объект".into());
+                    return Err("params must be a JSON object".into());
                 }
                 Some(value)
             }
         };
         let encoded = encode_label_i18n(label_key, params_value)?;
         if encoded.len() > MAX_LABEL * 8 {
-            return Err("label i18n слишком длинный".into());
+            return Err("label i18n too long".into());
         }
         let mut values = self.values.lock().map_err(|err| err.to_string())?;
         values.insert(key.to_string(), encoded);

@@ -193,7 +193,7 @@ pub struct PanelSchema {
 impl PanelSchema {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() > PANEL_MAX_BYTES {
-            return Err("panel.json слишком большой".into());
+            return Err("panel.json too large".into());
         }
         let schema: PanelSchema =
             serde_json::from_slice(bytes).map_err(|err| format!("panel.json: {err}"))?;
@@ -203,12 +203,12 @@ impl PanelSchema {
 
     fn validate(&self) -> Result<(), String> {
         if self.version != 1 && self.version != 2 {
-            return Err("panel.json: нужен version 1 или 2".into());
+            return Err("panel.json: need version 1 or 2".into());
         }
         let mut ids = Vec::new();
         Self::validate_tree(&self.blocks, self.version, 0, &mut ids)?;
         if ids.len() > MAX_BLOCKS {
-            return Err("panel.json: слишком много блоков".into());
+            return Err("panel.json: too many blocks".into());
         }
         Ok(())
     }
@@ -220,16 +220,16 @@ impl PanelSchema {
         ids: &mut Vec<String>,
     ) -> Result<(), String> {
         for block in blocks {
-            require_key(&block.id, "id блока")?;
+            require_key(&block.id, "block id")?;
             if ids.iter().any(|id| id == &block.id) {
-                return Err(format!("panel.json: дубль блока {}", block.id));
+                return Err(format!("panel.json: duplicate block {}", block.id));
             }
             ids.push(block.id.clone());
             block.validate(version, depth)?;
             let nested = block.walk_nested();
             if !nested.is_empty() {
                 if depth >= MAX_NEST_DEPTH {
-                    return Err("panel.json: слишком глубокая вложенность".into());
+                    return Err("panel.json: nesting too deep".into());
                 }
                 for child in nested {
                     Self::validate_tree(std::slice::from_ref(child), version, depth + 1, ids)?;
@@ -308,13 +308,13 @@ impl PanelBlock {
                     || self.options_source.is_some()
                     || self.default.is_some()
                 {
-                    return Err("panel.json: label без columns/items/toolbar".into());
+                    return Err("panel.json: label without columns/items/toolbar".into());
                 }
                 if let Some(text) = &self.text {
                     text.validate("label text")
                         .map_err(|err| format!("panel.json: {err}"))?;
                     if text.fallback().len() > MAX_LABEL {
-                        return Err("panel.json: label слишком длинный".into());
+                        return Err("panel.json: label too long".into());
                     }
                 }
             }
@@ -339,7 +339,7 @@ impl PanelBlock {
                     || self.options_source.is_some()
                     || self.default.is_some()
                 {
-                    return Err("panel.json: list без text/columns/items".into());
+                    return Err("panel.json: list without text/columns/items".into());
                 }
             }
             BlockType::Table => {
@@ -356,7 +356,7 @@ impl PanelBlock {
                     || self.options_source.is_some()
                     || self.default.is_some()
                 {
-                    return Err("panel.json: table без text/items/icon".into());
+                    return Err("panel.json: table without text/items/icon".into());
                 }
                 if self.columns.is_empty() || self.columns.len() > MAX_COLUMNS {
                     return Err("panel.json: table columns".into());
@@ -367,11 +367,11 @@ impl PanelBlock {
                     }
                 }
                 if self.editable && version < 2 {
-                    return Err("panel.json: editable table нужен version 2".into());
+                    return Err("panel.json: editable table needs version 2".into());
                 }
                 if (!self.layout.is_empty() || self.row_drawer) && (!self.editable || version < 2) {
                     return Err(
-                        "panel.json: layout/row_drawer только у editable table version 2".into(),
+                        "panel.json: layout/row_drawer only on editable table version 2".into(),
                     );
                 }
                 if !self.layout.is_empty()
@@ -386,20 +386,20 @@ impl PanelBlock {
                     return Err("panel.json: table layout".into());
                 }
                 if (!self.toolbar.is_empty() || !self.row_actions.is_empty()) && !self.editable {
-                    return Err("panel.json: toolbar/row_actions только у editable".into());
+                    return Err("panel.json: toolbar/row_actions only on editable".into());
                 }
                 if self.toolbar.len() > MAX_ACTIONS || self.row_actions.len() > MAX_ACTIONS {
-                    return Err("panel.json: слишком много actions".into());
+                    return Err("panel.json: too many actions".into());
                 }
                 let mut col_ids = Vec::new();
                 for column in &self.columns {
-                    require_key(&column.id, "id колонки")?;
+                    require_key(&column.id, "column id")?;
                     column
                         .label
                         .validate("column label")
                         .map_err(|err| format!("panel.json: {err}"))?;
                     if col_ids.contains(&column.id) {
-                        return Err(format!("panel.json: дубль колонки {}", column.id));
+                        return Err(format!("panel.json: duplicate column {}", column.id));
                     }
                     col_ids.push(column.id.clone());
                     column.validate(self.editable)?;
@@ -426,33 +426,33 @@ impl PanelBlock {
                     || self.options_source.is_some()
                     || self.default.is_some()
                 {
-                    return Err("panel.json: buttons без text/columns".into());
+                    return Err("panel.json: buttons without text/columns".into());
                 }
                 if self.items.is_empty() || self.items.len() > MAX_BUTTONS {
                     return Err("panel.json: buttons items".into());
                 }
                 let mut btn_ids = Vec::new();
                 for item in &self.items {
-                    require_key(&item.id, "id кнопки")?;
+                    require_key(&item.id, "button id")?;
                     item.label
                         .validate("button label")
                         .map_err(|err| format!("panel.json: {err}"))?;
                     require_icon(item.icon.as_deref())?;
                     if item.label.fallback().is_empty() && item.icon.is_none() {
-                        return Err("panel.json: кнопка без label/icon".into());
+                        return Err("panel.json: button without label/icon".into());
                     }
                     if btn_ids.contains(&item.id) {
-                        return Err(format!("panel.json: дубль кнопки {}", item.id));
+                        return Err(format!("panel.json: duplicate button {}", item.id));
                     }
                     btn_ids.push(item.id.clone());
                 }
             }
             BlockType::Drawer => {
                 if version < 2 {
-                    return Err("panel.json: drawer нужен version 2".into());
+                    return Err("panel.json: drawer needs version 2".into());
                 }
                 if depth > 0 {
-                    return Err("panel.json: drawer только на верхнем уровне".into());
+                    return Err("panel.json: drawer only at top level".into());
                 }
                 if !self.columns.is_empty()
                     || !self.items.is_empty()
@@ -469,7 +469,7 @@ impl PanelBlock {
                     || self.options_source.is_some()
                     || self.default.is_some()
                 {
-                    return Err("panel.json: drawer только text/icon/blocks".into());
+                    return Err("panel.json: drawer only text/icon/blocks".into());
                 }
                 if self.blocks.len() > MAX_DRAWER_CHILDREN
                     || self.rows.len() > MAX_DRAWER_ROWS
@@ -488,7 +488,7 @@ impl PanelBlock {
                     text.validate("drawer text")
                         .map_err(|err| format!("panel.json: {err}"))?;
                     if text.fallback().len() > MAX_LABEL {
-                        return Err("panel.json: drawer text слишком длинный".into());
+                        return Err("panel.json: drawer text too long".into());
                     }
                 }
                 for child in self.blocks.iter().chain(self.rows.iter().flatten()) {
@@ -501,7 +501,7 @@ impl PanelBlock {
                             | BlockType::Toggle
                             | BlockType::Text
                     ) {
-                        return Err("panel.json: drawer только field/label".into());
+                        return Err("panel.json: drawer only field/label".into());
                     }
                 }
                 for child in &self.trailing {
@@ -510,14 +510,14 @@ impl PanelBlock {
                         BlockType::Toggle | BlockType::Text | BlockType::Number
                     ) {
                         return Err(
-                            "panel.json: drawer trailing только toggle/string/number".into()
+                            "panel.json: drawer trailing only toggle/string/number".into()
                         );
                     }
                 }
             }
             BlockType::Color => {
                 if version < 2 {
-                    return Err("panel.json: color нужен version 2".into());
+                    return Err("panel.json: color needs version 2".into());
                 }
                 self.validate_field_shell("color")?;
                 if !self.options.is_empty()
@@ -526,7 +526,7 @@ impl PanelBlock {
                     || self.max_len.is_some()
                     || self.options_source.is_some()
                 {
-                    return Err("panel.json: color без options/min/max".into());
+                    return Err("panel.json: color without options/min/max".into());
                 }
                 if let Some(default) = &self.default {
                     let _ = parse_hex_color(default)?;
@@ -534,14 +534,14 @@ impl PanelBlock {
             }
             BlockType::Select => {
                 if version < 2 {
-                    return Err("panel.json: select нужен version 2".into());
+                    return Err("panel.json: select needs version 2".into());
                 }
                 self.validate_field_shell("select")?;
                 if self.min.is_some() || self.max.is_some() {
-                    return Err("panel.json: select без min/max".into());
+                    return Err("panel.json: select without min/max".into());
                 }
                 if self.max_len.is_some() {
-                    return Err("panel.json: select без max_len".into());
+                    return Err("panel.json: select without max_len".into());
                 }
                 if self.options.is_empty() || self.options.len() > MAX_ENUM_OPTIONS {
                     return Err("panel.json: select options".into());
@@ -549,33 +549,33 @@ impl PanelBlock {
                 for opt in &self.options {
                     require_plain(opt, "select option")?;
                     if opt.is_empty() || opt.len() > MAX_LIST_ITEM {
-                        return Err("panel.json: select option длина".into());
+                        return Err("panel.json: select option length".into());
                     }
                 }
                 if let Some(source) = &self.options_source {
                     if source != "system_fonts" {
-                        return Err("panel.json: неизвестный options_source".into());
+                        return Err("panel.json: unknown options_source".into());
                     }
                 }
                 if let Some(default) = &self.default {
                     let text = default
                         .as_str()
-                        .ok_or("panel.json: select default — строка")?;
+                        .ok_or("panel.json: select default must be a string")?;
                     if self.options_source.is_none() && !self.options.iter().any(|o| o == text) {
-                        return Err("panel.json: select default вне options".into());
+                        return Err("panel.json: select default not in options".into());
                     }
                 }
             }
             BlockType::Number => {
                 if version < 2 {
-                    return Err("panel.json: number block нужен version 2".into());
+                    return Err("panel.json: number block needs version 2".into());
                 }
                 self.validate_field_shell("number")?;
                 if !self.options.is_empty() || self.options_source.is_some() {
-                    return Err("panel.json: number без options".into());
+                    return Err("panel.json: number without options".into());
                 }
                 if self.max_len.is_some() {
-                    return Err("panel.json: number без max_len".into());
+                    return Err("panel.json: number without max_len".into());
                 }
                 if let (Some(min), Some(max)) = (self.min, self.max) {
                     if min > max {
@@ -585,22 +585,22 @@ impl PanelBlock {
                 if let Some(default) = &self.default {
                     let num = default
                         .as_f64()
-                        .ok_or("panel.json: number default — число")?;
+                        .ok_or("panel.json: number default must be a number")?;
                     if let Some(min) = self.min {
                         if num < min {
-                            return Err("panel.json: number default ниже min".into());
+                            return Err("panel.json: number default below min".into());
                         }
                     }
                     if let Some(max) = self.max {
                         if num > max {
-                            return Err("panel.json: number default выше max".into());
+                            return Err("panel.json: number default above max".into());
                         }
                     }
                 }
             }
             BlockType::Toggle => {
                 if version < 2 {
-                    return Err("panel.json: toggle нужен version 2".into());
+                    return Err("panel.json: toggle needs version 2".into());
                 }
                 self.validate_field_shell("toggle")?;
                 if !self.options.is_empty()
@@ -609,7 +609,7 @@ impl PanelBlock {
                     || self.max_len.is_some()
                     || self.options_source.is_some()
                 {
-                    return Err("panel.json: toggle без options/min/max/max_len".into());
+                    return Err("panel.json: toggle without options/min/max/max_len".into());
                 }
                 if let Some(default) = &self.default {
                     if !default.is_boolean() {
@@ -619,7 +619,7 @@ impl PanelBlock {
             }
             BlockType::Text => {
                 if version < 2 {
-                    return Err("panel.json: string нужен version 2".into());
+                    return Err("panel.json: string needs version 2".into());
                 }
                 self.validate_field_shell("string")?;
                 if !self.options.is_empty()
@@ -627,7 +627,7 @@ impl PanelBlock {
                     || self.max.is_some()
                     || self.options_source.is_some()
                 {
-                    return Err("panel.json: string без options/min/max".into());
+                    return Err("panel.json: string without options/min/max".into());
                 }
                 if matches!(self.max_len, Some(0))
                     || self.max_len.unwrap_or(1) as usize > MAX_LIST_ITEM
@@ -637,7 +637,7 @@ impl PanelBlock {
                 if let Some(default) = &self.default {
                     let text = default
                         .as_str()
-                        .ok_or("panel.json: string default — строка")?;
+                        .ok_or("panel.json: string default must be a string")?;
                     require_plain(text, "string value")?;
                     if text.len()
                         > self
@@ -646,7 +646,7 @@ impl PanelBlock {
                             .unwrap_or(MAX_LIST_ITEM)
                             .min(MAX_LIST_ITEM)
                     {
-                        return Err("panel.json: string слишком длинная".into());
+                        return Err("panel.json: string too long".into());
                     }
                 }
             }
@@ -667,13 +667,13 @@ impl PanelBlock {
             || self.editable
             || self.max_rows.is_some()
         {
-            return Err(format!("panel.json: {label} без table-полей"));
+            return Err(format!("panel.json: {label} without table fields"));
         }
         if let Some(text) = &self.text {
             text.validate(&format!("{label} text"))
                 .map_err(|err| format!("panel.json: {err}"))?;
             if text.fallback().len() > MAX_LABEL {
-                return Err(format!("panel.json: {label} text слишком длинный"));
+                return Err(format!("panel.json: {label} text too long"));
             }
         }
         Ok(())
@@ -686,7 +686,7 @@ impl PanelColumn {
             help.validate("column help")
                 .map_err(|err| format!("panel.json: {err}"))?;
             if help.fallback().len() > MAX_HELP {
-                return Err("panel.json: help слишком длинный".into());
+                return Err("panel.json: help too long".into());
             }
         }
         if !editable {
@@ -695,19 +695,19 @@ impl PanelColumn {
                 || !self.accept.is_empty()
                 || self.unit.is_some()
             {
-                return Err("panel.json: typed columns только у editable".into());
+                return Err("panel.json: typed columns only on editable".into());
             }
             return Ok(());
         }
         match self.column_type {
             ColumnType::String => {
                 if !self.options.is_empty() || !self.accept.is_empty() {
-                    return Err("panel.json: string без options/accept".into());
+                    return Err("panel.json: string without options/accept".into());
                 }
             }
             ColumnType::Number => {
                 if !self.options.is_empty() || !self.accept.is_empty() || self.max_len.is_some() {
-                    return Err("panel.json: number без options/accept/max_len".into());
+                    return Err("panel.json: number without options/accept/max_len".into());
                 }
                 if let (Some(min), Some(max)) = (self.min, self.max) {
                     if min > max {
@@ -723,7 +723,7 @@ impl PanelColumn {
                     || !self.accept.is_empty()
                 {
                     return Err(format!(
-                        "panel.json: {} без ограничений",
+                        "panel.json: {} without constraints",
                         match self.column_type {
                             ColumnType::Toggle => "toggle",
                             _ => "bool",
@@ -740,12 +740,12 @@ impl PanelColumn {
                     || self.max_len.is_some()
                     || !self.accept.is_empty()
                 {
-                    return Err("panel.json: enum без min/max/accept".into());
+                    return Err("panel.json: enum without min/max/accept".into());
                 }
                 for opt in &self.options {
                     require_plain(opt, "enum option")?;
                     if opt.is_empty() || opt.len() > MAX_LIST_ITEM {
-                        return Err("panel.json: enum option длина".into());
+                        return Err("panel.json: enum option length".into());
                     }
                 }
             }
@@ -758,12 +758,12 @@ impl PanelColumn {
                     || self.max_len.is_some()
                     || !self.accept.is_empty()
                 {
-                    return Err("panel.json: multi_enum без min/max/accept".into());
+                    return Err("panel.json: multi_enum without min/max/accept".into());
                 }
                 for opt in &self.options {
                     require_plain(opt, "multi_enum option")?;
                     if opt.is_empty() || opt.len() > MAX_LIST_ITEM {
-                        return Err("panel.json: multi_enum option длина".into());
+                        return Err("panel.json: multi_enum option length".into());
                     }
                 }
             }
@@ -780,7 +780,7 @@ impl PanelColumn {
                 let mut seen = Vec::new();
                 for item in &self.accept {
                     if seen.contains(item) {
-                        return Err("panel.json: дубль accept".into());
+                        return Err("panel.json: duplicate accept".into());
                     }
                     seen.push(*item);
                 }
@@ -788,10 +788,10 @@ impl PanelColumn {
         }
         if let Some(unit) = &self.unit {
             if unit != "fx_base" {
-                return Err("panel.json: неизвестный unit".into());
+                return Err("panel.json: unknown unit".into());
             }
             if self.column_type != ColumnType::Number {
-                return Err("panel.json: unit только у number".into());
+                return Err("panel.json: unit only on number".into());
             }
         }
         Ok(())
@@ -808,10 +808,10 @@ fn validate_actions(actions: &[PanelAction], label: &str) -> Result<(), String> 
             .map_err(|err| format!("panel.json: {err}"))?;
         require_icon(action.icon.as_deref())?;
         if action.label.fallback().is_empty() && action.icon.is_none() {
-            return Err(format!("panel.json: {label} без label/icon"));
+            return Err(format!("panel.json: {label} without label/icon"));
         }
         if ids.contains(&action.id) {
-            return Err(format!("panel.json: дубль {label} {}", action.id));
+            return Err(format!("panel.json: duplicate {label} {}", action.id));
         }
         ids.push(action.id.clone());
     }
@@ -823,14 +823,14 @@ fn require_icon(icon: Option<&str>) -> Result<(), String> {
         return Ok(());
     };
     if !is_panel_icon(id) {
-        return Err(format!("panel.json: неизвестный icon {id}"));
+        return Err(format!("panel.json: unknown icon {id}"));
     }
     Ok(())
 }
 
 fn require_key(raw: &str, label: &str) -> Result<(), String> {
     if !is_schema_key(raw) {
-        return Err(format!("panel.json: плохой {label}"));
+        return Err(format!("panel.json: bad {label}"));
     }
     Ok(())
 }
@@ -851,7 +851,7 @@ fn is_schema_key(raw: &str) -> bool {
 fn parse_hex_color(value: &Value) -> Result<String, String> {
     let raw = value
         .as_str()
-        .ok_or_else(|| "panel: color — строка #RGB/#RRGGBB".to_string())?;
+        .ok_or_else(|| "panel: color must be a string #RGB/#RRGGBB".to_string())?;
     let hex = raw.trim();
     let body = hex.strip_prefix('#').unwrap_or(hex);
     let ok = match body.len() {
@@ -860,7 +860,7 @@ fn parse_hex_color(value: &Value) -> Result<String, String> {
         _ => false,
     };
     if !ok {
-        return Err("panel: color — #RGB или #RRGGBB".into());
+        return Err("panel: color must be #RGB or #RRGGBB".into());
     }
     let full = if body.len() == 3 {
         body.chars().flat_map(|c| [c, c]).collect::<String>()
@@ -872,7 +872,7 @@ fn parse_hex_color(value: &Value) -> Result<String, String> {
 
 fn require_plain(raw: &str, label: &str) -> Result<(), String> {
     if raw.contains('<') || raw.contains('>') {
-        return Err(format!("panel.json: HTML в {label}"));
+        return Err(format!("panel.json: HTML in {label}"));
     }
     Ok(())
 }
@@ -885,10 +885,10 @@ mod tests {
         r#"{
             "version": 1,
             "blocks": [
-                { "id": "status", "type": "label", "text": "Очередь" },
+                { "id": "status", "type": "label", "text": "Queue" },
                 { "id": "queue", "type": "list" },
-                { "id": "users", "type": "table", "columns": [{ "id": "name", "label": "Ник" }] },
-                { "id": "bar", "type": "buttons", "items": [{ "id": "skip", "label": "Пропустить" }] }
+                { "id": "users", "type": "table", "columns": [{ "id": "name", "label": "Nick" }] },
+                { "id": "bar", "type": "buttons", "items": [{ "id": "skip", "label": "Skip" }] }
             ]
         }"#
         .as_bytes()
@@ -1017,7 +1017,7 @@ mod tests {
             }]
         }"#;
         let err = PanelSchema::parse(dup).unwrap_err();
-        assert!(err.contains("дубль"), "{err}");
+        assert!(err.contains("duplicate"), "{err}");
     }
 
     #[test]

@@ -312,7 +312,7 @@ impl std::fmt::Display for DropReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DropReason::TooLarge => write!(f, "TooLarge"),
-            DropReason::KindMismatch => write!(f, "неверный kind"),
+            DropReason::KindMismatch => write!(f, "invalid kind"),
         }
     }
 }
@@ -382,10 +382,10 @@ pub fn plugin_emit_request(
     opaque: Option<serde_json::Value>,
 ) -> Result<EmitRequest, String> {
     match &payload {
-        Payload::System(_) => return Err("system только Core".into()),
+        Payload::System(_) => return Err("system is Core-only".into()),
         Payload::Custom { kind, .. } => {
             if CANON_KIND_NAMES.contains(&kind.as_str()) {
-                return Err("custom не может маскировать канон".into());
+                return Err("custom cannot mask canon".into());
             }
         }
         Payload::Message { .. }
@@ -397,7 +397,7 @@ pub fn plugin_emit_request(
         | Payload::Reward { .. }
         | Payload::Moderation { .. } => {
             if platform_id.as_deref().filter(|s| !s.is_empty()).is_none() {
-                return Err("нет platform_id".into());
+                return Err("no platform_id".into());
             }
         }
     }
@@ -423,7 +423,7 @@ pub fn parse_opaque(raw: Option<String>) -> Result<Option<serde_json::Value>, St
     match raw {
         None => Ok(None),
         Some(text) if text.trim().is_empty() => Ok(None),
-        Some(text) => serde_json::from_str(&text).map_err(|_| "opaque не JSON".to_string()),
+        Some(text) => serde_json::from_str(&text).map_err(|_| "opaque is not JSON".to_string()),
     }
 }
 
@@ -513,7 +513,7 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert_eq!(err, "custom не может маскировать канон");
+        assert_eq!(err, "custom cannot mask canon");
     }
 
     #[test]
@@ -532,7 +532,7 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert_eq!(err, "system только Core");
+        assert_eq!(err, "system is Core-only");
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert_eq!(err, "нет platform_id");
+        assert_eq!(err, "no platform_id");
     }
 
     #[test]
@@ -568,6 +568,6 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert_eq!(err, "custom не может маскировать канон");
+        assert_eq!(err, "custom cannot mask canon");
     }
 }

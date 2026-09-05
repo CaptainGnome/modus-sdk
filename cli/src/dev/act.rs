@@ -44,24 +44,24 @@ impl ActJob {
             ActKind::Send => {
                 let text = self.text.as_deref().unwrap_or("").trim();
                 if text.is_empty() {
-                    return Err("пустое сообщение".into());
+                    return Err("empty message".into());
                 }
                 if text.len() > MAX_TEXT {
-                    return Err("слишком длинно".into());
+                    return Err("too long".into());
                 }
                 self.text = Some(text.to_string());
             }
             ActKind::Delete => {
                 let id = self.message_id.as_deref().unwrap_or("").trim();
                 if id.is_empty() {
-                    return Err("нет message-id".into());
+                    return Err("missing message-id".into());
                 }
                 self.message_id = Some(id.to_string());
             }
             ActKind::Timeout | ActKind::Ban | ActKind::Unban => {
                 let uid = self.target_user_id.as_deref().unwrap_or("").trim();
                 if uid.is_empty() {
-                    return Err("нет target-user-id".into());
+                    return Err("missing target-user-id".into());
                 }
                 self.target_user_id = Some(uid.to_string());
                 if self.kind == ActKind::Timeout {
@@ -93,7 +93,7 @@ pub fn load_acts(path: &Path, default_account: &str) -> Result<Vec<ActRequest>, 
 
 pub fn parse_acts(text: &str, default_account: &str) -> Result<Vec<ActRequest>, String> {
     if text.is_empty() {
-        return Err("act: пустой JSON".into());
+        return Err("act: empty JSON".into());
     }
     let value: Value = serde_json::from_str(text).map_err(|err| format!("act JSON: {err}"))?;
     match value {
@@ -108,13 +108,13 @@ pub fn parse_acts(text: &str, default_account: &str) -> Result<Vec<ActRequest>, 
 fn parse_one(mut value: Value, default_account: &str) -> Result<ActRequest, String> {
     let obj = value
         .as_object_mut()
-        .ok_or_else(|| "act: нужен объект".to_string())?;
+        .ok_or_else(|| "act: object required".to_string())?;
     let id = take_str(obj, &["id"]).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let account_id = take_str(obj, &["account_id", "account-id", "accountId"])
         .unwrap_or_else(|| default_account.to_string());
-    let platform = take_str(obj, &["platform"]).ok_or("act: нужен platform")?;
+    let platform = take_str(obj, &["platform"]).ok_or("act: need platform")?;
     let channel = take_str(obj, &["channel"]).unwrap_or_else(|| "dev".into());
-    let kind_raw = take_str(obj, &["kind"]).ok_or("act: нужен kind")?;
+    let kind_raw = take_str(obj, &["kind"]).ok_or("act: need kind")?;
     let kind = parse_kind(&kind_raw)?;
     let text = take_str(obj, &["text"]);
     let message_id = take_str(obj, &["message_id", "message-id", "messageId"]);
@@ -150,7 +150,7 @@ fn parse_kind(raw: &str) -> Result<ActKind, String> {
         "timeout" => Ok(ActKind::Timeout),
         "ban" => Ok(ActKind::Ban),
         "unban" => Ok(ActKind::Unban),
-        other => Err(format!("act: неизвестный kind {other}")),
+        other => Err(format!("act: unknown kind {other}")),
     }
 }
 
@@ -205,6 +205,6 @@ mod tests {
             "dev",
         )
         .unwrap_err();
-        assert!(err.contains("пустое"), "{err}");
+        assert!(err.contains("empty"), "{err}");
     }
 }

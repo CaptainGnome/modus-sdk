@@ -37,7 +37,7 @@ impl HistoryGate {
         }
         slot.count = slot.count.saturating_add(1);
         if slot.count > STORM_N {
-            return Err("слишком часто history".into());
+            return Err("history too frequent".into());
         }
         Ok(())
     }
@@ -48,11 +48,11 @@ pub fn encode_cursor(ts: i64, id: &str) -> String {
 }
 
 pub fn decode_cursor(raw: &str) -> Result<(i64, String), String> {
-    let (ts, id) = raw.split_once(':').ok_or_else(|| "неверный курсор".to_string())?;
+    let (ts, id) = raw.split_once(':').ok_or_else(|| "invalid cursor".to_string())?;
     if ts.is_empty() || id.is_empty() {
-        return Err("неверный курсор".into());
+        return Err("invalid cursor".into());
     }
-    let ts: i64 = ts.parse().map_err(|_| "неверный курсор".to_string())?;
+    let ts: i64 = ts.parse().map_err(|_| "invalid cursor".to_string())?;
     Ok((ts, id.to_string()))
 }
 

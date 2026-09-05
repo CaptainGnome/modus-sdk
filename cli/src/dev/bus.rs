@@ -75,7 +75,7 @@ impl Bus {
         match self.mailbox.sender().try_send(Mail::Bus(event)) {
             Ok(()) => Ok(()),
             Err(std::sync::mpsc::TrySendError::Full(_)) => {
-                eprintln!("шина: inbox полный, drop");
+                eprintln!("bus: inbox full, drop");
                 Ok(())
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => Ok(()),

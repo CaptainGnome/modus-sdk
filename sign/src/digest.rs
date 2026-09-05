@@ -6,7 +6,7 @@ use zip::read::ZipArchive;
 pub const SIGNATURE_ENTRY: &str = "signature";
 
 pub fn package_digest<R: Read + Seek>(reader: R) -> Result<[u8; 32], String> {
-    let mut archive = ZipArchive::new(reader).map_err(|err| format!("пакет не zip: {err}"))?;
+    let mut archive = ZipArchive::new(reader).map_err(|err| format!("package is not zip: {err}"))?;
     let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|err| format!("zip: {err}"))?;
@@ -17,7 +17,7 @@ pub fn package_digest<R: Read + Seek>(reader: R) -> Result<[u8; 32], String> {
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
-            .map_err(|err| format!("чтение {name}: {err}"))?;
+            .map_err(|err| format!("reading {name}: {err}"))?;
         entries.insert(name, bytes);
     }
     Ok(digest_entries(&entries))

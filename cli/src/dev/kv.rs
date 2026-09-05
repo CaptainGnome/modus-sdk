@@ -31,7 +31,7 @@ impl DevKv {
 
     pub fn get(&self, key: &str) -> Result<Option<String>, String> {
         if !is_kv_key(key) {
-            return Err("плохой ключ kv".into());
+            return Err("bad kv key".into());
         }
         let map = self.map.lock().map_err(|err| err.to_string())?;
         Ok(map.get(key).cloned())
@@ -40,10 +40,10 @@ impl DevKv {
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
         self.touch_storm()?;
         if !is_kv_key(key) {
-            return Err("плохой ключ kv".into());
+            return Err("bad kv key".into());
         }
         if value.len() > KV_MAX_VALUE {
-            return Err("значение kv слишком большое".into());
+            return Err("kv value too large".into());
         }
         let mut map = self.map.lock().map_err(|err| err.to_string())?;
         let old_size = map
@@ -54,10 +54,10 @@ impl DevKv {
         let used: usize = map.iter().map(|(k, v)| k.len() + v.len()).sum();
         let next = used.saturating_sub(old_size).saturating_add(new_size);
         if next > KV_QUOTA {
-            return Err("квота kv".into());
+            return Err("kv quota".into());
         }
         if !map.contains_key(key) && map.len() >= KV_MAX_KEYS {
-            return Err("слишком много ключей kv".into());
+            return Err("too many kv keys".into());
         }
         map.insert(key.to_string(), value.to_string());
         Ok(())
@@ -66,7 +66,7 @@ impl DevKv {
     pub fn delete(&self, key: &str) -> Result<(), String> {
         self.touch_storm()?;
         if !is_kv_key(key) {
-            return Err("плохой ключ kv".into());
+            return Err("bad kv key".into());
         }
         let mut map = self.map.lock().map_err(|err| err.to_string())?;
         map.remove(key);
@@ -75,7 +75,7 @@ impl DevKv {
 
     pub fn list_keys(&self, prefix: &str) -> Result<Vec<String>, String> {
         if prefix.len() > 128 {
-            return Err("плохой префикс kv".into());
+            return Err("bad kv prefix".into());
         }
         let map = self.map.lock().map_err(|err| err.to_string())?;
         let mut out: Vec<String> = map
@@ -97,7 +97,7 @@ impl DevKv {
         }
         storm.count = storm.count.saturating_add(1);
         if storm.count > STORM_N {
-            return Err("слишком часто kv".into());
+            return Err("kv too frequent".into());
         }
         Ok(())
     }
@@ -130,9 +130,9 @@ mod tests {
     #[test]
     fn rejects_bad_key_and_quota() {
         let kv = DevKv::new();
-        assert!(kv.set("has space", "x").unwrap_err().contains("плохой"));
+        assert!(kv.set("has space", "x").unwrap_err().contains("bad"));
         let big = "x".repeat(KV_MAX_VALUE + 1);
-        assert!(kv.set("k", &big).unwrap_err().contains("большое"));
+        assert!(kv.set("k", &big).unwrap_err().contains("large"));
     }
 
     #[test]
@@ -151,6 +151,6 @@ mod tests {
             kv.set(&format!("k{i}"), "v").unwrap();
         }
         let err = kv.set("overflow", "v").unwrap_err();
-        assert!(err.contains("часто"), "{err}");
+        assert!(err.contains("frequent"), "{err}");
     }
 }

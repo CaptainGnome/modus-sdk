@@ -40,7 +40,7 @@ pub fn validate_imports(
 ) -> Result<(), String> {
     for import in imports {
         if import.starts_with("wasi:") || import.starts_with("wasi-") {
-            return Err(format!("запрещённый импорт {import}"));
+            return Err(format!("forbidden import {import}"));
         }
         if BASE_IMPORTS.iter().any(|allowed| import == *allowed) {
             continue;
@@ -48,7 +48,7 @@ pub fn validate_imports(
         if KNOWN_IMPORTS.iter().any(|allowed| import == *allowed) {
             continue;
         }
-        return Err(format!("лишний импорт {import}"));
+        return Err(format!("extra import {import}"));
     }
     Ok(())
 }

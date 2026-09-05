@@ -45,7 +45,7 @@ impl DevCache {
             return Ok(key);
         }
         if !has_http {
-            return Err("нет гранта net.http".into());
+            return Err("no grant net.http".into());
         }
         let resp = net.fetch("GET", &norm, &[], &[])?;
         if resp.status != 200 {
@@ -53,7 +53,7 @@ impl DevCache {
         }
         let mime = detect_mime(&resp.headers, &resp.body)?;
         if resp.body.len() > max_for_mime(mime) {
-            return Err("файл слишком большой".into());
+            return Err("file too large".into());
         }
         self.store("dev", &key, mime, resp.body)?;
         Ok(key)
@@ -62,14 +62,14 @@ impl DevCache {
     pub fn put(&self, plugin_id: &str, mime: &str, bytes: &[u8]) -> Result<String, String> {
         let declared = parse_cache_mime(mime)?;
         if declared != AUDIO_MPEG {
-            return Err("put только audio/mpeg".into());
+            return Err("put audio/mpeg only".into());
         }
         let sniffed = sniff(bytes)?;
         if sniffed != declared {
-            return Err("тип файла не совпал".into());
+            return Err("file type mismatch".into());
         }
         if bytes.len() > MAX_AUDIO {
-            return Err("файл слишком большой".into());
+            return Err("file too large".into());
         }
         let sha = hex(Sha256::digest(bytes));
         let prefix: String = sha.chars().take(16).collect();
@@ -133,10 +133,10 @@ fn max_for_mime(mime: &str) -> usize {
 fn host_ok(url: &str, specs: &[HostSpec]) -> Result<(), String> {
     let (host, port) = https_url_host(url)?;
     if is_blocked_name(&host) {
-        return Err(format!("запрещённый хост {host}"));
+        return Err(format!("forbidden address {host}"));
     }
     if !allowed_by_manifest(&host, port, specs) {
-        return Err(format!("хост {host} вне манифеста"));
+        return Err(format!("host {host} not in manifest"));
     }
     Ok(())
 }
@@ -144,14 +144,14 @@ fn host_ok(url: &str, specs: &[HostSpec]) -> Result<(), String> {
 fn normalize_url(raw: &str) -> Result<String, String> {
     let parsed = Url::parse(raw).map_err(|err| format!("url: {err}"))?;
     if parsed.scheme() != "https" {
-        return Err("только https".into());
+        return Err("https only".into());
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
-        return Err("userinfo запрещён".into());
+        return Err("userinfo forbidden".into());
     }
     let (host, port) = https_url_host(raw)?;
     if is_blocked_name(&host) {
-        return Err(format!("запрещённый хост {host}"));
+        return Err(format!("forbidden address {host}"));
     }
     let mut out = format!("https://{host}");
     if port != 443 {
@@ -187,7 +187,7 @@ fn detect_mime(headers: &[(String, String)], body: &[u8]) -> Result<&'static str
     {
         let declared = parse_cache_mime(raw)?;
         if declared != sniffed {
-            return Err("тип файла не совпал".into());
+            return Err("file type mismatch".into());
         }
         Ok(declared)
     } else {
@@ -209,7 +209,7 @@ fn parse_cache_mime(raw: &str) -> Result<&'static str, String> {
         "image/webp" => Ok("image/webp"),
         "image/svg+xml" => Ok("image/svg+xml"),
         "audio/mpeg" | "audio/mp3" => Ok(AUDIO_MPEG),
-        _ => Err("неподдерживаемый MIME".into()),
+        _ => Err("unsupported MIME".into()),
     }
 }
 
@@ -240,7 +240,7 @@ fn sniff(body: &[u8]) -> Result<&'static str, String> {
     if is_mpeg_audio(body) {
         return Ok(AUDIO_MPEG);
     }
-    Err("неподдерживаемый MIME".into())
+    Err("unsupported MIME".into())
 }
 
 fn is_mpeg_audio(body: &[u8]) -> bool {

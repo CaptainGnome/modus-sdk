@@ -1,6 +1,6 @@
 use crate::wait::{self, Ready};
 
-/// Ждёт таймер `ms`. `true` — хост сказал стоп.
+/// Wait timer `ms`. `true` if the host signalled stop.
 pub fn wait_backoff(ms: u32) -> bool {
     wait::set_timer(ms);
     loop {
@@ -9,7 +9,7 @@ pub fn wait_backoff(ms: u32) -> bool {
             Ready::Timer | Ready::Resume => return false,
             Ready::Act(req) => {
                 #[cfg(any(feature = "emitter", feature = "connector"))]
-                crate::chat_complete::complete(&req.id, Err("нет соединения"));
+                crate::chat_complete::complete(&req.id, Err("no connection"));
                 #[cfg(not(any(feature = "emitter", feature = "connector")))]
                 let _ = req;
             }

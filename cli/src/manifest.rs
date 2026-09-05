@@ -115,12 +115,12 @@ pub struct CatalogDepend {
 impl Manifest {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let value: serde_json::Value =
-            serde_json::from_slice(bytes).map_err(|err| format!("манифест: {err}"))?;
+            serde_json::from_slice(bytes).map_err(|err| format!("manifest: {err}"))?;
         if value.get("client_secret").is_some() {
-            return Err("client_secret запрещён в манифесте".into());
+            return Err("client_secret forbidden in manifest".into());
         }
         let manifest: Manifest =
-            serde_json::from_value(value).map_err(|err| format!("манифест: {err}"))?;
+            serde_json::from_value(value).map_err(|err| format!("manifest: {err}"))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -133,14 +133,14 @@ impl Manifest {
 
     pub fn validate(&self) -> Result<(), String> {
         if !is_plugin_id(&self.id) {
-            return Err("plugin id: нужен reverse-DNS (com.publisher.name)".into());
+            return Err("plugin id: reverse-DNS required (com.publisher.name)".into());
         }
         self.name
             .validate("name")
-            .map_err(|err| format!("манифест: {err}"))?;
+            .map_err(|err| format!("manifest: {err}"))?;
         if self.abi != ABI_VERSION {
             return Err(format!(
-                "ABI {} не поддерживается (нужен {ABI_VERSION})",
+                "ABI {} not supported (need {ABI_VERSION})",
                 self.abi
             ));
         }
@@ -154,7 +154,7 @@ impl Manifest {
             self.platform_id
                 .as_deref()
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| "нет platform_id".to_string())?;
+                .ok_or_else(|| "no platform_id".to_string())?;
         }
         self.validate_auth()?;
         self.validate_slots()?;
@@ -171,10 +171,10 @@ impl Manifest {
             return Ok(());
         }
         if !self.grants_ui_slot() {
-            return Err("user_theme требует capability ui.slot".into());
+            return Err("user_theme requires capability ui.slot".into());
         }
         if !self.is_web() && !self.is_panel() {
-            return Err("user_theme требует slot web или panel".into());
+            return Err("user_theme requires web or panel slot".into());
         }
         Ok(())
     }
@@ -182,14 +182,14 @@ impl Manifest {
     fn validate_embed(&self) -> Result<(), String> {
         let has_cap = self.grants_media_embed();
         if !self.embed_hosts.is_empty() && !has_cap {
-            return Err("embed_hosts требует capability media.embed".into());
+            return Err("embed_hosts requires capability media.embed".into());
         }
         let mut seen = HashSet::new();
         for host in &self.embed_hosts {
             let spec = HostSpec::parse(host)?;
             let key = spec.canonical();
             if !seen.insert(key.clone()) {
-                return Err(format!("embed_hosts: дубликат {key}"));
+                return Err(format!("embed_hosts: duplicate {key}"));
             }
         }
         Ok(())
@@ -198,21 +198,21 @@ impl Manifest {
     fn validate_bridge(&self) -> Result<(), String> {
         let has_cap = self.grants_bridge_obs();
         if !self.bridge_requests.is_empty() && !has_cap {
-            return Err("bridge_requests требует capability bridge.obs".into());
+            return Err("bridge_requests requires capability bridge.obs".into());
         }
         for req in &self.bridge_requests {
             let t = req.trim();
             if t.is_empty() || t != req.as_str() {
-                return Err("bridge_requests: пустой или с пробелами по краям".into());
+                return Err("bridge_requests: empty or edge whitespace".into());
             }
             if is_denied_bridge_request(t) {
-                return Err(format!("bridge_requests: тип {t} в denylist Core"));
+                return Err(format!("bridge_requests: type {t} is on Core denylist"));
             }
         }
         let mut seen = HashSet::new();
         for req in &self.bridge_requests {
             if !seen.insert(req.clone()) {
-                return Err(format!("bridge_requests: дубликат {req}"));
+                return Err(format!("bridge_requests: duplicate {req}"));
             }
         }
         Ok(())
@@ -223,12 +223,12 @@ impl Manifest {
             return Ok(());
         };
         if rel != rel.trim() || rel.is_empty() {
-            return Err("platform_logo: пустой путь".into());
+            return Err("platform_logo: empty path".into());
         }
         self.platform_id
             .as_deref()
             .filter(|s| !s.is_empty())
-            .ok_or("platform_logo требует platform_id")?;
+            .ok_or("platform_logo requires platform_id")?;
         if rel.contains('\\')
             || rel.contains("..")
             || rel.starts_with('/')
@@ -237,11 +237,11 @@ impl Manifest {
                 .split('/')
                 .any(|part| part.is_empty() || part == "." || part == "..")
         {
-            return Err("platform_logo: путь относительно assets/, без ..".into());
+            return Err("platform_logo: path relative to assets/, no ..".into());
         }
         let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
         if !matches!(ext.as_str(), "svg" | "png" | "webp" | "jpg" | "jpeg") {
-            return Err("platform_logo: нужен svg/png/webp/jpg".into());
+            return Err("platform_logo: need svg/png/webp/jpg".into());
         }
         Ok(())
     }
@@ -250,25 +250,25 @@ impl Manifest {
         let mut seen = HashSet::new();
         for item in &self.provides {
             if !seen.insert(item.name.as_str()) {
-                return Err(format!("provides: дубль {}", item.name));
+                return Err(format!("provides: duplicate {}", item.name));
             }
             match item.name.as_str() {
                 "emotes" => {
                     if item.schema != "modus.emotes.v1" {
-                        return Err("provides emotes: схема modus.emotes.v1".into());
+                        return Err("provides emotes: schema modus.emotes.v1".into());
                     }
                 }
-                other => return Err(format!("provides: неизвестное имя {other}")),
+                other => return Err(format!("provides: unknown name {other}")),
             }
         }
         for name in &self.consumes {
             if name != "emotes" {
-                return Err(format!("consumes: неизвестное имя {name}"));
+                return Err(format!("consumes: unknown name {name}"));
             }
         }
         for dep in &self.depends {
             if dep.platform.trim().is_empty() {
-                return Err("depends: пустой platform".into());
+                return Err("depends: empty platform".into());
             }
         }
         Ok(())
@@ -278,21 +278,21 @@ impl Manifest {
         let has_cap = self.grants_ui_slot();
         if !has_cap {
             if !self.slots.is_empty() {
-                return Err("slots требуют грант ui.slot".into());
+                return Err("slots require grant ui.slot".into());
             }
             return Ok(());
         }
         if self.slots.is_empty() {
-            return Err("ui.slot требует слот web или panel".into());
+            return Err("ui.slot requires web or panel slot".into());
         }
         let mut seen = HashSet::new();
         for slot in &self.slots {
             if !seen.insert(slot.as_str()) {
-                return Err(format!("слот {slot} дубль"));
+                return Err(format!("slot {slot} duplicated"));
             }
             match slot.as_str() {
                 SLOT_WEB | SLOT_PANEL => {}
-                other => return Err(format!("слот {other} не поддерживается")),
+                other => return Err(format!("slot {other} is not supported")),
             }
         }
         Ok(())
@@ -301,24 +301,24 @@ impl Manifest {
     fn validate_auth(&self) -> Result<(), String> {
         if self.auth_mode.is_none() {
             if self.auth_url.is_some() || self.token_url.is_some() || self.device_url.is_some() {
-                return Err("нужен auth.mode".into());
+                return Err("need auth.mode".into());
             }
             return Ok(());
         }
         if !self.grants_auth() {
-            return Err("auth.mode требует грант auth.token".into());
+            return Err("auth.mode requires grant auth.token".into());
         }
         self.platform_id
             .as_deref()
             .filter(|s| !s.is_empty())
-            .ok_or("нет platform_id")?;
+            .ok_or("no platform_id")?;
         let mode = self.auth_mode.unwrap();
         match mode {
             AuthMode::Broker => {
-                require_nonempty(self.client_id.as_deref(), "нет client_id")?;
-                let auth = require_nonempty(self.auth_url.as_deref(), "нет auth_url")?;
+                require_nonempty(self.client_id.as_deref(), "missing client_id")?;
+                let auth = require_nonempty(self.auth_url.as_deref(), "missing auth_url")?;
                 require_https_host(auth, "auth_url", &self.hosts)?;
-                let broker = require_nonempty(self.broker_url.as_deref(), "нет broker_url")?;
+                let broker = require_nonempty(self.broker_url.as_deref(), "missing broker_url")?;
                 require_broker_url(broker, &self.hosts)?;
                 if let Some(token) = self.token_url.as_deref() {
                     require_https_host(token, "token_url", &self.hosts)?;
@@ -326,17 +326,17 @@ impl Manifest {
                 self.require_optional_https("userinfo_url", self.userinfo_url.as_deref())?;
             }
             AuthMode::Pkce => {
-                require_nonempty(self.client_id.as_deref(), "нет client_id")?;
-                let auth = require_nonempty(self.auth_url.as_deref(), "нет auth_url")?;
-                let token = require_nonempty(self.token_url.as_deref(), "нет token_url")?;
+                require_nonempty(self.client_id.as_deref(), "missing client_id")?;
+                let auth = require_nonempty(self.auth_url.as_deref(), "missing auth_url")?;
+                let token = require_nonempty(self.token_url.as_deref(), "missing token_url")?;
                 require_https_host(auth, "auth_url", &self.hosts)?;
                 require_https_host(token, "token_url", &self.hosts)?;
                 self.require_optional_https("userinfo_url", self.userinfo_url.as_deref())?;
             }
             AuthMode::Device => {
-                require_nonempty(self.client_id.as_deref(), "нет client_id")?;
-                let device = require_nonempty(self.device_url.as_deref(), "нет device_url")?;
-                let token = require_nonempty(self.token_url.as_deref(), "нет token_url")?;
+                require_nonempty(self.client_id.as_deref(), "missing client_id")?;
+                let device = require_nonempty(self.device_url.as_deref(), "missing device_url")?;
+                let token = require_nonempty(self.token_url.as_deref(), "missing token_url")?;
                 require_https_host(device, "device_url", &self.hosts)?;
                 require_https_host(token, "token_url", &self.hosts)?;
                 self.require_optional_https("userinfo_url", self.userinfo_url.as_deref())?;
@@ -346,9 +346,9 @@ impl Manifest {
             }
             AuthMode::Custom => {
                 if self.auth_url.is_none() && self.device_url.is_none() {
-                    return Err("custom: нужен auth_url или device_url".into());
+                    return Err("custom: need auth_url or device_url".into());
                 }
-                let token = require_nonempty(self.token_url.as_deref(), "нет token_url")?;
+                let token = require_nonempty(self.token_url.as_deref(), "missing token_url")?;
                 require_https_host(token, "token_url", &self.hosts)?;
                 if let Some(auth) = self.auth_url.as_deref() {
                     require_https_host(auth, "auth_url", &self.hosts)?;

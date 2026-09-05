@@ -1,4 +1,4 @@
-/// Ошибки хоста. Набор строк — часть ABI 2; смена без мажора SDK ломает enum.
+/// Host errors. Literal strings are part of ABI 2; change them only with a coordinated host+SDK release.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostError {
     Stopped,
@@ -17,13 +17,13 @@ pub fn next_backoff_ms(current: u32) -> u32 {
 
 impl HostError {
     pub fn classify(err: &str) -> Self {
-        if err == "остановлен" {
+        if err == "stopped" {
             return Self::Stopped;
         }
-        if err.starts_with("нет гранта ") {
+        if err.starts_with("no grant ") {
             return Self::Grant;
         }
-        if err == "refresh отозван" || err == "чужой аккаунт" {
+        if err == "refresh revoked" || err == "foreign account" {
             return Self::Revoked;
         }
         if is_network(err) {
@@ -44,16 +44,16 @@ impl From<&str> for HostError {
 }
 
 fn is_network(err: &str) -> bool {
-    err == "только https/wss"
-        || err == "квота http"
-        || err == "квота ws"
-        || err == "тело слишком большое"
-        || err == "ответ слишком большой"
-        || err == "литеральный IP запрещён"
-        || err == "нет tcp для ws"
-        || err.contains("вне манифеста")
-        || err.contains("не в whitelist Core")
-        || err.starts_with("запрещённый адрес ")
+    err == "https/wss only"
+        || err == "http quota"
+        || err == "ws quota"
+        || err == "body too large"
+        || err == "response too large"
+        || err == "literal IP forbidden"
+        || err == "no tcp for ws"
+        || err.contains("not in manifest")
+        || err.contains("not in Core whitelist")
+        || err.starts_with("forbidden address ")
 }
 
 #[cfg(test)]
@@ -62,33 +62,30 @@ mod tests {
 
     #[test]
     fn classifies_host_strings() {
-        assert_eq!(HostError::classify("остановлен"), HostError::Stopped);
+        assert_eq!(HostError::classify("stopped"), HostError::Stopped);
         assert_eq!(
-            HostError::classify("нет гранта bus.emit"),
+            HostError::classify("no grant bus.emit"),
             HostError::Grant
         );
+        assert_eq!(HostError::classify("no grant net.ws"), HostError::Grant);
+        assert_eq!(HostError::classify("refresh revoked"), HostError::Revoked);
+        assert_eq!(HostError::classify("foreign account"), HostError::Revoked);
+        assert_eq!(HostError::classify("https/wss only"), HostError::Network);
+        assert_eq!(HostError::classify("http quota"), HostError::Network);
         assert_eq!(
-            HostError::classify("нет гранта net.ws"),
-            HostError::Grant
-        );
-        assert_eq!(HostError::classify("refresh отозван"), HostError::Revoked);
-        assert_eq!(HostError::classify("чужой аккаунт"), HostError::Revoked);
-        assert_eq!(HostError::classify("только https/wss"), HostError::Network);
-        assert_eq!(HostError::classify("квота http"), HostError::Network);
-        assert_eq!(
-            HostError::classify("хост cdn.example.com вне манифеста"),
+            HostError::classify("host cdn.example.com not in manifest"),
             HostError::Network
         );
         assert_eq!(
-            HostError::classify("хост api.example.com не в whitelist Core"),
+            HostError::classify("host api.example.com not in Core whitelist"),
             HostError::Network
         );
         assert_eq!(
-            HostError::classify("литеральный IP запрещён"),
+            HostError::classify("literal IP forbidden"),
             HostError::Network
         );
         assert_eq!(
-            HostError::classify("запрещённый адрес 127.0.0.1"),
+            HostError::classify("forbidden address 127.0.0.1"),
             HostError::Network
         );
         assert_eq!(
@@ -96,12 +93,12 @@ mod tests {
             HostError::Other("TooLarge".into())
         );
         assert_eq!(
-            HostError::classify("нет platform_id"),
-            HostError::Other("нет platform_id".into())
+            HostError::classify("no platform_id"),
+            HostError::Other("no platform_id".into())
         );
         assert_eq!(
-            HostError::classify("system только Core"),
-            HostError::Other("system только Core".into())
+            HostError::classify("system is Core-only"),
+            HostError::Other("system is Core-only".into())
         );
     }
 
@@ -111,7 +108,7 @@ mod tests {
         assert!(HostError::Revoked.is_stop());
         assert!(!HostError::Grant.is_stop());
         assert!(!HostError::Network.is_stop());
-        assert!(!HostError::Other("ws закрыт".into()).is_stop());
+        assert!(!HostError::Other("ws closed".into()).is_stop());
     }
 
     #[test]

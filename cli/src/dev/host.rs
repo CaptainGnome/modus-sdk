@@ -65,7 +65,7 @@ impl HostData {
 
     fn running(&self) -> Result<(), String> {
         if self.halted() {
-            Err("остановлен".into())
+            Err("stopped".into())
         } else {
             Ok(())
         }
@@ -161,7 +161,7 @@ impl modus::abi::bus_emit::Host for HostData {
     ) -> Result<(), String> {
         self.running()?;
         if !self.has_emit {
-            return Err("нет гранта bus.emit".into());
+            return Err("no grant bus.emit".into());
         }
         let mapped = map_payload(payload)?;
         let opaque = parse_opaque(opaque)?;
@@ -179,7 +179,7 @@ impl modus::abi::alert_enqueue::Host for HostData {
     fn enqueue(&mut self, job: modus::abi::alert_enqueue::Job) -> Result<String, String> {
         self.running()?;
         if !self.has_alert {
-            return Err("нет гранта alert.enqueue".into());
+            return Err("no grant alert.enqueue".into());
         }
         let id = uuid::Uuid::new_v4().to_string();
         let _ = writeln!(
@@ -200,7 +200,7 @@ impl modus::abi::alert_enqueue::Host for HostData {
     ) -> Result<(), String> {
         self.running()?;
         if !self.has_alert {
-            return Err("нет гранта alert.enqueue".into());
+            return Err("no grant alert.enqueue".into());
         }
         match outcome {
             Ok(()) => {
@@ -247,13 +247,13 @@ fn validate_dev_asset_path(rel: &str) -> Result<(), String> {
         || rel.starts_with('/')
         || rel.starts_with("assets/")
     {
-        return Err("небезопасный путь assets".into());
+        return Err("unsafe assets path".into());
     }
     if rel
         .split('/')
         .any(|part| part.is_empty() || part == "." || part == "..")
     {
-        return Err("небезопасный путь assets".into());
+        return Err("unsafe assets path".into());
     }
     Ok(())
 }
@@ -263,9 +263,9 @@ impl modus::abi::assets::Host for HostData {
         validate_dev_asset_path(&path)?;
         let file_path = self.plugin_dir.join("assets").join(&path);
         let bytes = std::fs::read(&file_path)
-            .map_err(|_| format!("нет assets/{path}"))?;
+            .map_err(|_| format!("missing assets/{path}"))?;
         if bytes.len() > 512 * 1024 {
-            return Err("файл assets слишком большой".into());
+            return Err("assets file too large".into());
         }
         Ok(bytes)
     }
@@ -279,7 +279,7 @@ impl modus::abi::history_read::Host for HostData {
     ) -> Result<modus::abi::history_read::Page, String> {
         self.running()?;
         if !self.has_history {
-            return Err("нет гранта history.read".into());
+            return Err("no grant history.read".into());
         }
         self.history.touch(&self.plugin_id)?;
         let (events, next) = self.bus.history_page(cursor.as_deref(), limit)?;
@@ -295,7 +295,7 @@ impl modus::abi::storage_kv::Host for HostData {
     fn get(&mut self, key: String) -> Result<Option<String>, String> {
         self.running()?;
         if !self.has_kv {
-            return Err("нет гранта storage.kv".into());
+            return Err("no grant storage.kv".into());
         }
         self.kv.get(&key)
     }
@@ -303,7 +303,7 @@ impl modus::abi::storage_kv::Host for HostData {
     fn set(&mut self, key: String, value: String) -> Result<(), String> {
         self.running()?;
         if !self.has_kv {
-            return Err("нет гранта storage.kv".into());
+            return Err("no grant storage.kv".into());
         }
         self.kv.set(&key, &value)
     }
@@ -311,7 +311,7 @@ impl modus::abi::storage_kv::Host for HostData {
     fn delete(&mut self, key: String) -> Result<(), String> {
         self.running()?;
         if !self.has_kv {
-            return Err("нет гранта storage.kv".into());
+            return Err("no grant storage.kv".into());
         }
         self.kv.delete(&key)
     }
@@ -319,7 +319,7 @@ impl modus::abi::storage_kv::Host for HostData {
     fn list_keys(&mut self, prefix: String) -> Result<Vec<String>, String> {
         self.running()?;
         if !self.has_kv {
-            return Err("нет гранта storage.kv".into());
+            return Err("no grant storage.kv".into());
         }
         self.kv.list_keys(&prefix)
     }
@@ -329,7 +329,7 @@ impl modus::abi::chat_act::Host for HostData {
     fn act(&mut self, job: modus::abi::chat_act::ActJob) -> Result<String, String> {
         self.running()?;
         if !self.has_chat {
-            return Err("нет гранта chat.act".into());
+            return Err("no grant chat.act".into());
         }
         let mut job = ActJob {
             platform: job.platform,
@@ -378,13 +378,13 @@ impl modus::abi::auth_token::Host for HostData {
     fn token(&mut self, account_id: String) -> Result<String, String> {
         self.running()?;
         if !self.has_auth {
-            return Err("нет гранта auth.token".into());
+            return Err("no grant auth.token".into());
         }
         let Some(token) = &self.access_token else {
-            return Err("чужой аккаунт".into());
+            return Err("foreign account".into());
         };
         if account_id != self.auth_account {
-            return Err("чужой аккаунт".into());
+            return Err("foreign account".into());
         }
         Ok(token.clone())
     }
@@ -400,7 +400,7 @@ impl modus::abi::net_http::Host for HostData {
     ) -> Result<modus::abi::net_http::HttpResponse, String> {
         self.running()?;
         if !self.has_http {
-            return Err("нет гранта net.http".into());
+            return Err("no grant net.http".into());
         }
         let resp = self.net.fetch(&method, &url, &headers, &body)?;
         Ok(modus::abi::net_http::HttpResponse {
@@ -415,7 +415,7 @@ impl modus::abi::net_ws::Host for HostData {
     fn connect(&mut self, url: String) -> Result<u32, String> {
         self.running()?;
         if !self.has_ws {
-            return Err("нет гранта net.ws".into());
+            return Err("no grant net.ws".into());
         }
         self.net.ws_connect(&url)
     }
@@ -423,14 +423,14 @@ impl modus::abi::net_ws::Host for HostData {
     fn send_text(&mut self, handle: u32, message: String) -> Result<(), String> {
         self.running()?;
         if !self.has_ws {
-            return Err("нет гранта net.ws".into());
+            return Err("no grant net.ws".into());
         }
         self.net.ws_send(handle, &message)
     }
 
     fn close(&mut self, handle: u32) -> Result<(), String> {
         if !self.has_ws {
-            return Err("нет гранта net.ws".into());
+            return Err("no grant net.ws".into());
         }
         self.net.ws_close(handle)
     }
@@ -447,7 +447,7 @@ impl modus::abi::media_cache::Host for HostData {
     fn ensure(&mut self, url: String) -> Result<String, String> {
         self.running()?;
         if !self.has_cache {
-            return Err("нет гранта media.cache".into());
+            return Err("no grant media.cache".into());
         }
         self.cache
             .ensure(&self.net, &self.specs, self.has_http, &url)
@@ -456,7 +456,7 @@ impl modus::abi::media_cache::Host for HostData {
     fn put(&mut self, mime: String, bytes: Vec<u8>) -> Result<String, String> {
         self.running()?;
         if !self.has_cache {
-            return Err("нет гранта media.cache".into());
+            return Err("no grant media.cache".into());
         }
         self.cache.put(&self.plugin_id, &mime, &bytes)
     }
@@ -464,7 +464,7 @@ impl modus::abi::media_cache::Host for HostData {
     fn release(&mut self, key: String) -> Result<(), String> {
         self.running()?;
         if !self.has_cache {
-            return Err("нет гранта media.cache".into());
+            return Err("no grant media.cache".into());
         }
         self.cache.release(&key)
     }
@@ -474,7 +474,7 @@ impl modus::abi::media_audio::Host for HostData {
     fn play(&mut self, spec: modus::abi::media_audio::Spec) -> Result<String, String> {
         self.running()?;
         if !self.has_audio {
-            return Err("нет гранта media.audio".into());
+            return Err("no grant media.audio".into());
         }
         let id = uuid::Uuid::new_v4().to_string();
         let label = match &spec {
@@ -497,7 +497,7 @@ impl modus::abi::media_audio::Host for HostData {
     fn stop(&mut self, id: String) -> Result<(), String> {
         self.running()?;
         if !self.has_audio {
-            return Err("нет гранта media.audio".into());
+            return Err("no grant media.audio".into());
         }
         let _ = writeln!(io::stderr(), "media.audio stop {id}");
         self.mailbox.wake_media_ended(id);
@@ -514,17 +514,17 @@ impl modus::abi::bridge::Host for HostData {
     ) -> Result<Vec<u8>, String> {
         self.running()?;
         if !self.has_bridge {
-            return Err("нет гранта bridge.obs".into());
+            return Err("no grant bridge.obs".into());
         }
         if id != "obs" {
-            return Err(format!("неизвестный bridge id {id}"));
+            return Err(format!("unknown bridge id {id}"));
         }
         let _ = writeln!(
             io::stderr(),
             "bridge invoke {id} {request_type} ({} bytes)",
             payload.len()
         );
-        Err("нет соединения".into())
+        Err("no connection".into())
     }
 }
 
@@ -554,7 +554,7 @@ impl modus::abi::catalog::Host for HostData {
     fn publish(&mut self, name: String, payload: Vec<u8>) -> Result<(), String> {
         self.running()?;
         if !self.has_catalog {
-            return Err("нет гранта catalog.publish".into());
+            return Err("no grant catalog.publish".into());
         }
         let text = String::from_utf8_lossy(&payload);
         let _ = writeln!(
@@ -568,7 +568,7 @@ impl modus::abi::catalog::Host for HostData {
     fn unpublish(&mut self, name: String) -> Result<(), String> {
         self.running()?;
         if !self.has_catalog {
-            return Err("нет гранта catalog.publish".into());
+            return Err("no grant catalog.publish".into());
         }
         let _ = writeln!(io::stderr(), "catalog unpublish {name}");
         Ok(())
@@ -582,7 +582,7 @@ impl modus::abi::rates_publish::Host for HostData {
     ) -> Result<(), String> {
         self.running()?;
         if !self.has_rates {
-            return Err("нет гранта rates.publish".into());
+            return Err("no grant rates.publish".into());
         }
         let _ = writeln!(io::stderr(), "rates publish {} pairs", rates.len());
         for rate in &rates {
@@ -607,14 +607,14 @@ impl modus::abi::rates::Host for HostData {
     fn convert_to_base(&mut self, amount: f64, from: String) -> Result<f64, String> {
         self.running()?;
         if !self.has_rates_convert {
-            return Err("нет гранта rates.convert".into());
+            return Err("no grant rates.convert".into());
         }
         let from = from.trim().to_ascii_uppercase();
         if from == "RUB" {
             let scale = 100f64;
             return Ok((amount * scale).floor() / scale);
         }
-        Err(format!("нет курса {from}→RUB"))
+        Err(format!("missing rate {from}→RUB"))
     }
 }
 
@@ -622,7 +622,7 @@ impl modus::abi::ui_slot::Host for HostData {
     fn post(&mut self, payload: Vec<u8>) -> Result<(), String> {
         self.running()?;
         if !self.has_ui {
-            return Err("нет слота ui".into());
+            return Err("no ui slot".into());
         }
         let text = String::from_utf8_lossy(&payload);
         let _ = writeln!(

@@ -125,7 +125,7 @@ fn run() -> Result<(), String> {
                         println!("ok {} {} (unsigned)", manifest.id, target.display());
                     }
                     Ok(status) => {
-                        return Err(format!("подпись: {status:?}"));
+                        return Err(format!("signature: {status:?}"));
                     }
                     Err(err) => return Err(err),
                 }
@@ -144,7 +144,7 @@ fn run() -> Result<(), String> {
             let out = pack::pack(&target)?;
             if sign || sign_cmd::resolve_sign_key(key_file.as_deref())?.is_some() {
                 let key_path = sign_cmd::resolve_sign_key(key_file.as_deref())?
-                    .ok_or_else(|| "pack --sign: нужен --key-file или MODUS_SIGN_KEY".to_string())?;
+                    .ok_or_else(|| "pack --sign: need --key-file or MODUS_SIGN_KEY".to_string())?;
                 sign_cmd::sign_mplug(&out, &key_path)?;
                 println!("signed {}", out.display());
             } else {
@@ -168,7 +168,7 @@ fn run() -> Result<(), String> {
         } => {
             let target = resolve_path(path)?;
             if is_mplug(&target) {
-                return Err("dev: нужен каталог crate, не .mplug".into());
+                return Err("dev: need crate directory, not .mplug".into());
             }
             dev::run(dev::DevArgs {
                 path: Some(target),

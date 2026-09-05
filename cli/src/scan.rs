@@ -42,7 +42,7 @@ fn scan_dir(dir: &Path) -> Result<bool, String> {
 
 pub fn reject_dual_bindgen(plugin_dir: &Path) -> Result<(), String> {
     if has_modus_sdk(plugin_dir)? && has_wit_bindgen_generate(plugin_dir)? {
-        return Err("WIT вручную плюс SDK — два bindgen".into());
+        return Err("manual WIT plus SDK — dual bindgen".into());
     }
     Ok(())
 }

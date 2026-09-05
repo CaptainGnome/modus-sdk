@@ -56,7 +56,7 @@ pub struct DevArgs {
 pub fn run(args: DevArgs) -> Result<(), String> {
     let plugin_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
     if plugin_dir.is_file() {
-        return Err("dev: нужен каталог crate, не файл".into());
+        return Err("dev: need crate directory, not a file".into());
     }
     let access_token = load_token(args.token, args.token_file)?;
     let auth_account = args
@@ -65,7 +65,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         .trim()
         .to_string();
     if auth_account.is_empty() {
-        return Err("dev: пустой --account".into());
+        return Err("dev: empty --account".into());
     }
     let replay = match args.replay {
         Some(path) => Some(load_replay(&path)?),
@@ -170,9 +170,9 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         if msg.contains("does not have export `run`")
             || msg.contains("matching implementation was not found")
         {
-            "несовместимый ABI — пересоберите плагин".into()
+            "incompatible ABI — rebuild the plugin".into()
         } else {
-            format!("не инстанцировать: {msg}")
+            format!("cannot instantiate: {msg}")
         }
     })?;
 
@@ -197,7 +197,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
 
     store.epoch_deadline_callback(|store| {
         if store.data().stop.load(Ordering::SeqCst) {
-            Err(wasmtime::Error::msg("остановлен"))
+            Err(wasmtime::Error::msg("stopped"))
         } else {
             Ok(UpdateDeadline::Continue(RUN_EPOCH_TICKS))
         }
@@ -225,11 +225,11 @@ fn load_token(
     token_file: Option<PathBuf>,
 ) -> Result<Option<String>, String> {
     match (token, token_file) {
-        (Some(_), Some(_)) => Err("dev: задайте --token или --token-file".into()),
+        (Some(_), Some(_)) => Err("dev: set --token or --token-file".into()),
         (Some(token), None) => {
             let token = token.trim().to_string();
             if token.is_empty() {
-                Err("dev: пустой токен".into())
+                Err("dev: empty token".into())
             } else {
                 Ok(Some(token))
             }
@@ -238,7 +238,7 @@ fn load_token(
             let token = fs::read_to_string(&path).map_err(|err| format!("token-file: {err}"))?;
             let token = token.trim().to_string();
             if token.is_empty() {
-                Err("dev: пустой токен".into())
+                Err("dev: empty token".into())
             } else {
                 Ok(Some(token))
             }
@@ -271,7 +271,7 @@ fn join_plugin(handle: thread::JoinHandle<()>) -> Result<(), String> {
         let _ = tx.send(());
     });
     if rx.recv_timeout(STOP_JOIN).is_err() {
-        return Err("не остановить".into());
+        return Err("cannot stop".into());
     }
     Ok(())
 }

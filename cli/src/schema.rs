@@ -70,7 +70,7 @@ pub struct SettingsSchema {
 impl SettingsSchema {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() > SCHEMA_MAX_BYTES {
-            return Err("settings.json слишком большой".into());
+            return Err("settings.json too large".into());
         }
         let schema: SettingsSchema =
             serde_json::from_slice(bytes).map_err(|err| format!("settings.json: {err}"))?;
@@ -125,13 +125,13 @@ impl SettingsSchema {
     }
 
     pub fn validate_value(&self, key: &str, value: &Value) -> Result<String, String> {
-        let field = self.field(key).ok_or_else(|| format!("нет поля {key}"))?;
+        let field = self.field(key).ok_or_else(|| format!("missing field {key}"))?;
         match field.field_type {
             FieldType::String => {
-                let text = value.as_str().ok_or("нужна строка")?;
+                let text = value.as_str().ok_or("string required")?;
                 let cap = field.max_len.unwrap_or(MAX_STRING as u32) as usize;
                 if text.len() > cap.min(MAX_STRING) {
-                    return Err("строка слишком длинная".into());
+                    return Err("string too long".into());
                 }
                 Ok(text.to_string())
             }
@@ -139,51 +139,51 @@ impl SettingsSchema {
                 let n = as_finite_number(value)?;
                 if let Some(min) = field.min {
                     if n < min {
-                        return Err("число вне диапазона".into());
+                        return Err("number out of range".into());
                     }
                 }
                 if let Some(max) = field.max {
                     if n > max {
-                        return Err("число вне диапазона".into());
+                        return Err("number out of range".into());
                     }
                 }
-                number_to_canonical(n).ok_or_else(|| "число".into())
+                number_to_canonical(n).ok_or_else(|| "number".into())
             }
             FieldType::Bool => {
-                let flag = value.as_bool().ok_or("нужен bool")?;
+                let flag = value.as_bool().ok_or("bool required")?;
                 Ok(if flag { "true".into() } else { "false".into() })
             }
             FieldType::Enum => {
-                let text = value.as_str().ok_or("нужна строка")?;
+                let text = value.as_str().ok_or("string required")?;
                 if !field.options.iter().any(|option| option.value == text) {
-                    return Err("значение не в enum".into());
+                    return Err("value not in enum".into());
                 }
                 Ok(text.to_string())
             }
             FieldType::List => {
-                let items = value.as_array().ok_or("нужен список")?;
+                let items = value.as_array().ok_or("list required")?;
                 let cap = field.max_items.unwrap_or(MAX_LIST_ITEMS as u32) as usize;
                 if items.len() > cap.min(MAX_LIST_ITEMS) {
-                    return Err("список слишком длинный".into());
+                    return Err("list too long".into());
                 }
                 let mut out = Vec::new();
                 for item in items {
-                    let text = item.as_str().ok_or("элемент списка — строка")?;
+                    let text = item.as_str().ok_or("list item must be a string")?;
                     if text.len() > MAX_LIST_ITEM {
-                        return Err("элемент списка слишком длинный".into());
+                        return Err("list item too long".into());
                     }
                     out.push(text.to_string());
                 }
                 serde_json::to_string(&out).map_err(|err| err.to_string())
             }
             FieldType::Secret => {
-                let text = value.as_str().ok_or("нужна строка")?;
+                let text = value.as_str().ok_or("string required")?;
                 if text.len() > 512 {
-                    return Err("секрет слишком длинный".into());
+                    return Err("secret too long".into());
                 }
                 Ok(text.to_string())
             }
-            FieldType::Label => Err("label только через set-label".into()),
+            FieldType::Label => Err("label only via set-label".into()),
         }
     }
 
@@ -224,33 +224,33 @@ impl SettingsSchema {
 
     fn validate(&self) -> Result<(), String> {
         if self.version != 1 {
-            return Err("settings.json: нужен version 1".into());
+            return Err("settings.json: need version 1".into());
         }
         if self.sections.len() > MAX_SECTIONS {
-            return Err("settings.json: слишком много секций".into());
+            return Err("settings.json: too many sections".into());
         }
         let mut keys = Vec::new();
         let mut section_ids = Vec::new();
         for section in &self.sections {
-            require_key(&section.id, "id секции")?;
+            require_key(&section.id, "section id")?;
             section
                 .title
-                .validate("title секции")
+                .validate("section title")
                 .map_err(|err| format!("settings.json: {err}"))?;
             if section_ids.contains(&section.id) {
-                return Err(format!("settings.json: дубль секции {}", section.id));
+                return Err(format!("settings.json: duplicate section {}", section.id));
             }
             section_ids.push(section.id.clone());
             for field in &section.fields {
                 field.validate()?;
                 if keys.iter().any(|k| k == &field.key) {
-                    return Err(format!("settings.json: дубль ключа {}", field.key));
+                    return Err(format!("settings.json: duplicate key {}", field.key));
                 }
                 keys.push(field.key.clone());
             }
         }
         if keys.len() > MAX_FIELDS {
-            return Err("settings.json: слишком много полей".into());
+            return Err("settings.json: too many fields".into());
         }
         Ok(())
     }
@@ -258,7 +258,7 @@ impl SettingsSchema {
 
 impl SettingsField {
     fn validate(&self) -> Result<(), String> {
-        require_key(&self.key, "ключ")?;
+        require_key(&self.key, "key")?;
         self.label
             .validate("label")
             .map_err(|err| format!("settings.json: {err}"))?;
@@ -266,7 +266,7 @@ impl SettingsField {
             help.validate("help")
                 .map_err(|err| format!("settings.json: {err}"))?;
             if help.fallback().len() > MAX_HELP {
-                return Err("settings.json: help слишком длинный".into());
+                return Err("settings.json: help too long".into());
             }
         }
         match self.field_type {
@@ -274,14 +274,14 @@ impl SettingsField {
                 if let Some(default) = &self.default {
                     let text = default
                         .as_str()
-                        .ok_or("settings.json: default string — строка")?;
+                        .ok_or("settings.json: default string must be a string")?;
                     let cap = self.max_len.unwrap_or(MAX_STRING as u32) as usize;
                     if cap > MAX_STRING || text.len() > cap.min(MAX_STRING) {
-                        return Err("settings.json: default string слишком длинный".into());
+                        return Err("settings.json: default string too long".into());
                     }
                 }
                 if self.max_len.unwrap_or(MAX_STRING as u32) as usize > MAX_STRING {
-                    return Err("settings.json: max_len слишком большой".into());
+                    return Err("settings.json: max_len too large".into());
                 }
             }
             FieldType::Number => {
@@ -317,55 +317,55 @@ impl SettingsField {
                     }
                     require_plain(&option.value, "enum value")?;
                     if values.contains(&option.value) {
-                        return Err("settings.json: дубль enum value".into());
+                        return Err("settings.json: duplicate enum value".into());
                     }
                     values.push(option.value.clone());
                 }
                 if let Some(default) = &self.default {
                     let value = default
                         .as_str()
-                        .ok_or("settings.json: default enum — строка")?;
+                        .ok_or("settings.json: default enum must be a string")?;
                     if !values.iter().any(|item| item == value) {
-                        return Err("settings.json: default не в options".into());
+                        return Err("settings.json: default not in options".into());
                     }
                 }
             }
             FieldType::List => {
                 let cap = self.max_items.unwrap_or(MAX_LIST_ITEMS as u32) as usize;
                 if cap > MAX_LIST_ITEMS {
-                    return Err("settings.json: max_items слишком большой".into());
+                    return Err("settings.json: max_items too large".into());
                 }
                 if let Some(default) = &self.default {
                     let items = default
                         .as_array()
-                        .ok_or("settings.json: default list — массив")?;
+                        .ok_or("settings.json: default list must be an array")?;
                     if items.len() > cap {
-                        return Err("settings.json: default list слишком длинный".into());
+                        return Err("settings.json: default list too long".into());
                     }
                     for item in items {
                         let text = item
                             .as_str()
-                            .ok_or("settings.json: элемент list — строка")?;
+                            .ok_or("settings.json: list item must be a string")?;
                         if text.len() > MAX_LIST_ITEM {
-                            return Err("settings.json: элемент list слишком длинный".into());
+                            return Err("settings.json: list item too long".into());
                         }
                     }
                 }
             }
             FieldType::Secret => {
                 if self.default.is_some() {
-                    return Err("settings.json: secret без default".into());
+                    return Err("settings.json: secret without default".into());
                 }
             }
             FieldType::Label => {
                 if self.default.is_some() {
-                    return Err("settings.json: label без default".into());
+                    return Err("settings.json: label without default".into());
                 }
                 if let Some(text) = &self.text {
                     text.validate("label text")
                         .map_err(|err| format!("settings.json: {err}"))?;
                     if text.fallback().len() > MAX_LABEL {
-                        return Err("settings.json: label слишком длинный".into());
+                        return Err("settings.json: label too long".into());
                     }
                 }
             }
@@ -380,25 +380,25 @@ fn number_to_canonical(n: f64) -> Option<String> {
 
 fn as_finite_number(value: &Value) -> Result<f64, String> {
     let n = match value {
-        Value::Number(num) => num.as_f64().ok_or("число")?,
-        _ => return Err("нужно число".into()),
+        Value::Number(num) => num.as_f64().ok_or("number")?,
+        _ => return Err("number required".into()),
     };
     if !n.is_finite() {
-        return Err("число не конечное".into());
+        return Err("number is not finite".into());
     }
     Ok(n)
 }
 
 fn check_number_range(n: f64, min: Option<f64>, max: Option<f64>) -> Result<(), String> {
     if min.is_some_and(|min| n < min) || max.is_some_and(|max| n > max) {
-        return Err("число вне диапазона".into());
+        return Err("number out of range".into());
     }
     Ok(())
 }
 
 fn require_key(raw: &str, label: &str) -> Result<(), String> {
     if !is_schema_key(raw) {
-        return Err(format!("settings.json: плохой {label}"));
+        return Err(format!("settings.json: bad {label}"));
     }
     Ok(())
 }
@@ -418,7 +418,7 @@ fn is_schema_key(raw: &str) -> bool {
 
 fn require_plain(raw: &str, label: &str) -> Result<(), String> {
     if raw.contains('<') || raw.contains('>') {
-        return Err(format!("settings.json: HTML в {label}"));
+        return Err(format!("settings.json: HTML in {label}"));
     }
     Ok(())
 }
@@ -495,7 +495,7 @@ mod tests {
                 ]
             }]
         }"#;
-        assert!(SettingsSchema::parse(raw).unwrap_err().contains("дубль"));
+        assert!(SettingsSchema::parse(raw).unwrap_err().contains("duplicate"));
     }
 
     #[test]

@@ -151,8 +151,8 @@ fn invalid(digest: [u8; 32], file: Option<SignatureFile>) -> PackageSignature {
 fn parse_digest_field(raw: &str) -> Result<[u8; 32], String> {
     let hex = raw
         .strip_prefix("sha256:")
-        .ok_or_else(|| "digest: нужен префикс sha256:".to_string())?;
-    decode_hex(hex).ok_or_else(|| "digest: плохой hex".to_string())
+        .ok_or_else(|| "digest: need sha256: prefix".to_string())?;
+    decode_hex(hex).ok_or_else(|| "digest: bad hex".to_string())
 }
 
 fn read_signature_from_zip(package: &[u8]) -> Result<Option<SignatureFile>, String> {
@@ -164,7 +164,7 @@ fn read_signature_from_zip(package: &[u8]) -> Result<Option<SignatureFile>, Stri
     };
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)
-        .map_err(|err| format!("чтение signature: {err}"))?;
+        .map_err(|err| format!("reading signature: {err}"))?;
     Ok(Some(read_signature_file(&buf)?))
 }
 
@@ -202,7 +202,7 @@ fn append_signature(package: &[u8], signature: &SignatureFile) -> Result<Vec<u8>
             let mut bytes = Vec::new();
             entry
                 .read_to_end(&mut bytes)
-                .map_err(|err| format!("чтение {name}: {err}"))?;
+                .map_err(|err| format!("reading {name}: {err}"))?;
             let method = match compression {
                 zip::CompressionMethod::Stored => zip::CompressionMethod::Stored,
                 _ => zip::CompressionMethod::Deflated,
