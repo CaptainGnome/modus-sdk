@@ -505,26 +505,41 @@ impl modus::abi::media_audio::Host for HostData {
     }
 }
 
-impl modus::abi::bridge::Host for HostData {
-    fn invoke(
-        &mut self,
-        id: String,
-        request_type: String,
-        payload: Vec<u8>,
-    ) -> Result<Vec<u8>, String> {
+impl modus::abi::net_bridge::Host for HostData {
+    fn connect(&mut self, url: String) -> Result<u32, String> {
         self.running()?;
         if !self.has_bridge {
-            return Err("no grant bridge.obs".into());
+            return Err("no grant net.bridge".into());
         }
-        if id != "obs" {
-            return Err(format!("unknown bridge id {id}"));
+        if !url.starts_with("ws://127.0.0.1")
+            && !url.starts_with("ws://localhost")
+            && !url.starts_with("ws://[::1]")
+        {
+            return Err("ws only".into());
+        }
+        let _ = writeln!(io::stderr(), "net.bridge connect {url}");
+        Err("no connection".into())
+    }
+
+    fn send_text(&mut self, handle: u32, message: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_bridge {
+            return Err("no grant net.bridge".into());
         }
         let _ = writeln!(
             io::stderr(),
-            "bridge invoke {id} {request_type} ({} bytes)",
-            payload.len()
+            "net.bridge send {handle} ({} bytes)",
+            message.len()
         );
-        Err("no connection".into())
+        Err("no socket".into())
+    }
+
+    fn close(&mut self, handle: u32) -> Result<(), String> {
+        if !self.has_bridge {
+            return Err("no grant net.bridge".into());
+        }
+        let _ = writeln!(io::stderr(), "net.bridge close {handle}");
+        Ok(())
     }
 }
 

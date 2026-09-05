@@ -137,7 +137,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         has_ui: manifest.has_ui_surface(),
         has_history: manifest.grants_history(),
         has_audio: manifest.grants_media_audio(),
-        has_bridge: manifest.grants_bridge_obs(),
+        has_bridge: manifest.grants_net_bridge(),
         has_embed: manifest.grants_media_embed(),
         has_rates: manifest.grants_rates_publish(),
         has_rates_convert: manifest.grants_rates_convert(),

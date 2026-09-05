@@ -45,8 +45,10 @@ impl From<&str> for HostError {
 
 fn is_network(err: &str) -> bool {
     err == "https/wss only"
+        || err == "ws only"
         || err == "http quota"
         || err == "ws quota"
+        || err == "bridge quota"
         || err == "body too large"
         || err == "response too large"
         || err == "literal IP forbidden"
@@ -68,6 +70,9 @@ mod tests {
             HostError::Grant
         );
         assert_eq!(HostError::classify("no grant net.ws"), HostError::Grant);
+        assert_eq!(HostError::classify("no grant net.bridge"), HostError::Grant);
+        assert_eq!(HostError::classify("ws only"), HostError::Network);
+        assert_eq!(HostError::classify("bridge quota"), HostError::Network);
         assert_eq!(HostError::classify("refresh revoked"), HostError::Revoked);
         assert_eq!(HostError::classify("foreign account"), HostError::Revoked);
         assert_eq!(HostError::classify("https/wss only"), HostError::Network);

@@ -505,8 +505,8 @@ fn audio_key_from_opaque(opaque: Option<&str>) -> Option<String> {
 modus_sdk::export!(Plugin);
 "#
         .into(),
-        Role::Bridge => r#"use modus_sdk::bridge;
-use modus_sdk::log::{self, Level};
+        Role::Bridge => r##"use modus_sdk::log::{self, Level};
+use modus_sdk::net_bridge;
 use modus_sdk::settings;
 use modus_sdk::types::Payload;
 use modus_sdk::wait::{self, Ready};
@@ -518,44 +518,51 @@ impl Guest for Plugin {
     fn init() {
         log::log(Level::Info, "init");
         wait::subscribe();
-        let _ = settings::set_label("status", "waiting for events");
+        let _ = settings::set_label("status", "waiting");
     }
 
     fn run() {
+        let mut handle: Option<u32> = None;
         loop {
             match wait::wait() {
-                Ready::Stop => return,
-                Ready::Settings => {
-                    let _ = settings::set_label("status", "settings updated");
+                Ready::Stop => {
+                    if let Some(h) = handle.take() {
+                        let _ = net_bridge::close(h);
+                    }
+                    return;
+                }
+                Ready::Settings | Ready::Resume => {
+                    if let Some(h) = handle.take() {
+                        let _ = net_bridge::close(h);
+                    }
+                    handle = connect().ok();
+                }
+                Ready::WsText(frame) => {
+                    log::log(Level::Info, &format!("ws {}", frame.text));
+                }
+                Ready::WsClosed(h) => {
+                    if handle == Some(h) {
+                        handle = None;
+                        let _ = settings::set_label("status", "disconnected");
+                    }
                 }
                 Ready::Bus(event) => {
-                    let scene = match &event.payload {
-                        Payload::Follow(_) => follow_scene(),
-                        Payload::Custom(c) if c.kind == "obs.set-scene" => {
-                            scene_from_fields(&c.fields)
-                        }
-                        _ => None,
+                    let want = match &event.payload {
+                        Payload::Follow(_) => true,
+                        Payload::Custom(c) if c.kind == "obs.set-scene" => true,
+                        _ => false,
                     };
-                    let Some(scene) = scene else {
-                        continue;
-                    };
-                    let payload = format!("{{\"sceneName\":\"{}\"}}", escape_json(&scene));
-                    match bridge::invoke("obs", "SetCurrentProgramScene", payload.as_bytes()) {
-                        Ok(_) => {
-                            log::log(Level::Info, &format!("scene {scene}"));
-                            let _ = settings::set_label("status", &format!("scene: {scene}"));
+                    if want {
+                        if handle.is_none() {
+                            handle = connect().ok();
                         }
-                        Err(err) => {
-                            log::log(Level::Warn, &err);
-                            let _ = settings::set_label("status", &err);
+                        if let Some(h) = handle {
+                            let _ = net_bridge::send_text(h, r#"{"op":6,"d":{"requestType":"SetCurrentProgramScene","requestId":"1","requestData":{"sceneName":"Main"}}}"#);
                         }
                     }
                 }
-                Ready::WsText(_)
-                | Ready::WsClosed(_)
-                | Ready::Timer
+                Ready::Timer
                 | Ready::Act(_)
-                | Ready::Resume
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
@@ -567,30 +574,17 @@ impl Guest for Plugin {
     fn shutdown() {}
 }
 
-fn follow_scene() -> Option<String> {
-    let scene = settings::get("follow_scene").unwrap_or_default();
-    let scene = scene.trim();
-    if scene.is_empty() {
-        None
-    } else {
-        Some(scene.to_string())
-    }
-}
-
-fn scene_from_fields(fields: &[(String, String)]) -> Option<String> {
-    fields
-        .iter()
-        .find(|(key, _)| key == "scene")
-        .map(|(_, value)| value.clone())
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn escape_json(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
+fn connect() -> Result<u32, String> {
+    let host = settings::get("host").unwrap_or_else(|| "127.0.0.1".into());
+    let port = settings::get("port").unwrap_or_else(|| "4455".into());
+    let url = format!("ws://{}:{}", host.trim(), port.trim());
+    let h = net_bridge::connect(&url)?;
+    let _ = settings::set_label("status", "connected");
+    Ok(h)
 }
 
 modus_sdk::export!(Plugin);
-"#
+"##
         .into(),
         Role::Emitter => r#"use modus_sdk::log::{self, Level};
 use modus_sdk::wait::{self, Ready};
@@ -1451,8 +1445,7 @@ fn manifest_json(
   "version": "0.1.0",
   "author": "{author}",
   "abi": 2,
-  "capabilities": ["bridge.obs"],
-  "bridge_requests": ["SetCurrentProgramScene"]
+  "capabilities": ["net.bridge"]
 }}
 "#
         ),

@@ -367,8 +367,10 @@ interface ui-slot {
   post: func(payload: list<u8>) -> result<_, string>;
 }
 
-interface bridge {
-  invoke: func(id: string, request-type: string, payload: list<u8>) -> result<list<u8>, string>;
+interface net-bridge {
+  connect: func(url: string) -> result<u32, string>;
+  send-text: func(handle: u32, message: string) -> result<_, string>;
+  close: func(handle: u32) -> result<_, string>;
 }
 
 interface media-embed {
@@ -425,7 +427,7 @@ world plugin {
   import catalog;
   import ui-slot;
   import history-read;
-  import bridge;
+  import net-bridge;
   import media-embed;
   import rates-publish;
   import rates;
@@ -453,7 +455,7 @@ world runtime {
   import catalog;
   import ui-slot;
   import history-read;
-  import bridge;
+  import net-bridge;
   import media-embed;
   import rates-publish;
   import rates;

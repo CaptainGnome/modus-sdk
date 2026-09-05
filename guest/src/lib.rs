@@ -309,7 +309,7 @@ pub use bindings::modus::abi::history_read;
 pub use bindings::modus::abi::{media_audio, media_cache};
 
 #[cfg(feature = "bridge")]
-pub use bindings::modus::abi::bridge;
+pub use bindings::modus::abi::net_bridge;
 
 #[cfg(feature = "embedder")]
 pub use bindings::modus::abi::{media_embed, ui_slot};

@@ -33,8 +33,8 @@ pub enum Capability {
     HistoryRead,
     #[serde(rename = "media.audio")]
     MediaAudio,
-    #[serde(rename = "bridge.obs")]
-    BridgeObs,
+    #[serde(rename = "net.bridge")]
+    NetBridge,
     #[serde(rename = "media.embed")]
     MediaEmbed,
     #[serde(rename = "rates.publish")]
@@ -84,8 +84,6 @@ pub struct Manifest {
     pub scopes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hosts: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bridge_requests: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub embed_hosts: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -161,7 +159,6 @@ impl Manifest {
         self.validate_user_theme()?;
         self.validate_catalog()?;
         self.validate_platform_logo()?;
-        self.validate_bridge()?;
         self.validate_embed()?;
         Ok(())
     }
@@ -190,29 +187,6 @@ impl Manifest {
             let key = spec.canonical();
             if !seen.insert(key.clone()) {
                 return Err(format!("embed_hosts: duplicate {key}"));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_bridge(&self) -> Result<(), String> {
-        let has_cap = self.grants_bridge_obs();
-        if !self.bridge_requests.is_empty() && !has_cap {
-            return Err("bridge_requests requires capability bridge.obs".into());
-        }
-        for req in &self.bridge_requests {
-            let t = req.trim();
-            if t.is_empty() || t != req.as_str() {
-                return Err("bridge_requests: empty or edge whitespace".into());
-            }
-            if is_denied_bridge_request(t) {
-                return Err(format!("bridge_requests: type {t} is on Core denylist"));
-            }
-        }
-        let mut seen = HashSet::new();
-        for req in &self.bridge_requests {
-            if !seen.insert(req.clone()) {
-                return Err(format!("bridge_requests: duplicate {req}"));
             }
         }
         Ok(())
@@ -397,8 +371,8 @@ impl Manifest {
         self.capabilities.contains(&Capability::MediaAudio)
     }
 
-    pub fn grants_bridge_obs(&self) -> bool {
-        self.capabilities.contains(&Capability::BridgeObs)
+    pub fn grants_net_bridge(&self) -> bool {
+        self.capabilities.contains(&Capability::NetBridge)
     }
 
     pub fn grants_media_embed(&self) -> bool {
@@ -424,13 +398,6 @@ impl Manifest {
     pub fn has_ui_surface(&self) -> bool {
         self.is_web() || self.is_panel()
     }
-}
-
-fn is_denied_bridge_request(request_type: &str) -> bool {
-    matches!(
-        request_type,
-        "GetStreamServiceSettings" | "SetStreamServiceSettings"
-    )
 }
 
 pub fn is_plugin_id(id: &str) -> bool {

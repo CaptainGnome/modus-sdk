@@ -25,7 +25,7 @@ const KNOWN_IMPORTS: &[&str] = &[
     "modus:abi/ui-slot@2.0.0",
     "modus:abi/history-read@2.0.0",
     "modus:abi/media-audio@2.0.0",
-    "modus:abi/bridge@2.0.0",
+    "modus:abi/net-bridge@2.0.0",
     "modus:abi/media-embed@2.0.0",
     "modus:abi/rates-publish@2.0.0",
     "modus:abi/rates@2.0.0",
