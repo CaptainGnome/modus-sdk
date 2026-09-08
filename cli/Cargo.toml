@@ -24,6 +24,7 @@ wasmparser = "0.227"
 wasmtime = { version = "36", features = ["component-model"] }
 wit-component = "0.227"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+getrandom = "0.3"
 
 [dev-dependencies]
 modus-sign = { path = "../sign" }

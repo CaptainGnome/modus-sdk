@@ -1116,6 +1116,11 @@ fn enqueue_bus(event: &Event) {
         duration_ms,
         title,
         body,
+        lane: String::new(),
+        exclusive: true,
+        replay: false,
+        pending_audio: false,
+        pending_ttl_ms: 0,
     }) {
         log::log(Level::Warn, &err);
     }

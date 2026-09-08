@@ -7,6 +7,7 @@ const BASE_IMPORTS: &[&str] = &[
     "modus:abi/wait@2.0.0",
     "modus:abi/types@2.0.0",
     "modus:abi/clock@2.0.0",
+    "modus:abi/random@2.0.0",
     "modus:abi/settings@2.0.0",
     "modus:abi/assets@2.0.0",
 ];

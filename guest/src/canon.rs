@@ -1,13 +1,23 @@
 pub fn sanitize_name_color(raw: Option<&str>) -> Option<String> {
     let value = raw?.trim();
-    if value.len() == 7
-        && value.starts_with('#')
-        && value.as_bytes()[1..].iter().all(|b| b.is_ascii_hexdigit())
-    {
-        Some(value.to_string())
-    } else {
-        None
+    let parts: Vec<&str> = value.split('>').map(str::trim).filter(|p| !p.is_empty()).collect();
+    if !(1..=4).contains(&parts.len()) {
+        return None;
     }
+    let mut out = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        if part.len() != 7
+            || !part.starts_with('#')
+            || !part.as_bytes()[1..].iter().all(|b| b.is_ascii_hexdigit())
+        {
+            return None;
+        }
+        if i > 0 {
+            out.push('>');
+        }
+        out.push_str(part);
+    }
+    Some(out)
 }
 
 #[cfg(any(feature = "consumer", feature = "emitter", feature = "connector"))]
@@ -106,9 +116,18 @@ mod tests {
             sanitize_name_color(Some(" #Ff4500 ")).as_deref(),
             Some("#Ff4500")
         );
+        assert_eq!(
+            sanitize_name_color(Some("#EC8C24>#F2F932")).as_deref(),
+            Some("#EC8C24>#F2F932")
+        );
+        assert_eq!(
+            sanitize_name_color(Some("#111111>#222222>#333333>#444444")).as_deref(),
+            Some("#111111>#222222>#333333>#444444")
+        );
         assert!(sanitize_name_color(Some("red")).is_none());
         assert!(sanitize_name_color(Some("#fff")).is_none());
         assert!(sanitize_name_color(None).is_none());
         assert!(sanitize_name_color(Some("#GG0000")).is_none());
+        assert!(sanitize_name_color(Some("#111111>#222222>#333333>#444444>#555555")).is_none());
     }
 }

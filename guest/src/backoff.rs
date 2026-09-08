@@ -20,7 +20,9 @@ pub fn wait_backoff(ms: u32) -> bool {
             | Ready::Ui(_)
             | Ready::MediaEnded(_)
             | Ready::AlertPlay(_)
-            | Ready::AlertStop(_) => {}
+            | Ready::AlertStop(_)
+            | Ready::AlertReplay(_)
+            | Ready::TtsRendered(_) => {}
         }
     }
 }

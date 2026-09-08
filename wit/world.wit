@@ -209,6 +209,13 @@ interface wait {
     duration-ms: u32,
   }
 
+  /// Async `start-render-tts` finished (cache key or error).
+  record tts-rendered {
+    request-id: string,
+    key: option<string>,
+    error: option<string>,
+  }
+
   variant ready {
     ws-text(ws-frame),
     ws-closed(u32),
@@ -222,6 +229,9 @@ interface wait {
     media-ended(string),
     alert-play(alert-command),
     alert-stop(alert-command),
+    /// Presenter rebuilds card for `event-id` then `enqueue(..., replay: true)`. Not a bus emit.
+    alert-replay(string),
+    tts-rendered(tts-rendered),
   }
 
   subscribe: func();
@@ -267,6 +277,11 @@ interface net-ws {
 
 interface clock {
   sleep-ms: func(ms: u32);
+}
+
+/// Host CSPRNG. `len` 1…256; 0 / >cap → err. No grant (base API).
+interface random {
+  fill: func(len: u32) -> result<list<u8>, string>;
 }
 
 interface settings {
@@ -334,9 +349,38 @@ interface alert-enqueue {
     duration-ms: u32,
     title: string,
     body: string,
+    /// Empty → `main`.
+    lane: string,
+    /// Default true (ABI 35 solo). Non-exclusive must be set explicitly.
+    exclusive: bool,
+    /// Same event-id; insert at head of lane waiting. Ignores skip_alert.
+    replay: bool,
+    /// Enqueue as unready until `mark-ready` or pending TTL. Incompatible with replay.
+    pending-audio: bool,
+    /// 0 → Core default (15s). Expire → ready without voice (not drop).
+    pending-ttl-ms: u32,
+  }
+
+  /// Companion attached to a parent job. Always plays on the parent's lane.
+  record attach-job {
+    /// Exactly one of parent-job-id / event-id.
+    parent-job-id: option<string>,
+    event-id: option<string>,
+    /// Chain label (not a lane). Non-empty.
+    tag: string,
+    duration-ms: option<u32>,
+    title: string,
+    body: string,
   }
 
   enqueue: func(job: job) -> result<string, string>;
+  attach: func(job: attach-job) -> result<string, string>;
+  /// Unready → ready. key none/empty = without voice. Same plugin_id only.
+  mark-ready: func(
+    event-id: string,
+    audio-key: option<string>,
+    duration-ms: option<u32>,
+  ) -> result<_, string>;
   complete: func(job-id: string, outcome: result<_, string>) -> result<_, string>;
 }
 
@@ -348,14 +392,35 @@ interface media-cache {
 }
 
 interface media-audio {
+  record voice {
+    id: string,
+    name: string,
+    culture: string,
+  }
+
+  record tts {
+    text: string,
+    /// SpVoice token id; none/empty → Core tts.voice
+    voice: option<string>,
+  }
+
   variant spec {
     asset(string),
     url(string),
     tts(string),
+    tts-ex(tts),
   }
 
   play: func(spec: spec) -> result<string, string>;
   stop: func(id: string) -> result<_, string>;
+  duration-ms: func(spec: spec) -> result<u32, string>;
+  /// SAPI SpVoice tokens. Empty list when TTS unavailable.
+  list-voices: func() -> result<list<voice>, string>;
+  /// Synthesize to media.cache only (no speakers, no play-id / MediaEnded).
+  /// Ignores tts.output. Ok = 64-hex cache key for overlay / later play(url).
+  render-tts: func(tts: tts) -> result<string, string>;
+  /// Background synthesize; Ok = request-id. Completion → `Ready::tts-rendered`.
+  start-render-tts: func(tts: tts) -> result<string, string>;
 }
 
 interface catalog {
@@ -411,6 +476,7 @@ world plugin {
   import self-info;
   import log;
   import clock;
+  import random;
   import wait;
   import settings;
   import assets;
@@ -439,6 +505,7 @@ world runtime {
   import self-info;
   import log;
   import clock;
+  import random;
   import wait;
   import settings;
   import assets;

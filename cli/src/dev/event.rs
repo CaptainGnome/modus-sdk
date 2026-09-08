@@ -429,14 +429,24 @@ pub fn parse_opaque(raw: Option<String>) -> Result<Option<serde_json::Value>, St
 
 pub fn sanitize_name_color(raw: Option<String>) -> Option<String> {
     let value = raw?.trim().to_string();
-    if value.len() == 7
-        && value.starts_with('#')
-        && value.as_bytes()[1..].iter().all(|b| b.is_ascii_hexdigit())
-    {
-        Some(value)
-    } else {
-        None
+    let parts: Vec<&str> = value.split('>').map(str::trim).filter(|p| !p.is_empty()).collect();
+    if !(1..=4).contains(&parts.len()) {
+        return None;
     }
+    let mut out = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        if part.len() != 7
+            || !part.starts_with('#')
+            || !part.as_bytes()[1..].iter().all(|b| b.is_ascii_hexdigit())
+        {
+            return None;
+        }
+        if i > 0 {
+            out.push('>');
+        }
+        out.push_str(part);
+    }
+    Some(out)
 }
 
 pub fn payload_text(payload: &Payload) -> String {

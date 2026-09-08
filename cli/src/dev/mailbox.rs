@@ -18,6 +18,11 @@ pub enum Mail {
     MediaEnded(String),
     Settings,
     Act(ActRequest),
+    TtsRendered {
+        request_id: String,
+        key: Option<String>,
+        error: Option<String>,
+    },
 }
 
 pub struct Mailbox {
@@ -55,6 +60,19 @@ impl Mailbox {
 
     pub fn wake_media_ended(&self, id: String) {
         let _ = self.tx.try_send(Mail::MediaEnded(id));
+    }
+
+    pub fn wake_tts_rendered(
+        &self,
+        request_id: String,
+        key: Option<String>,
+        error: Option<String>,
+    ) {
+        let _ = self.tx.try_send(Mail::TtsRendered {
+            request_id,
+            key,
+            error,
+        });
     }
 
     pub fn wait(&self, stop: &AtomicBool) -> Mail {

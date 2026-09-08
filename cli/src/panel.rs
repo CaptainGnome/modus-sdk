@@ -547,13 +547,16 @@ impl PanelBlock {
                     return Err("panel.json: select options".into());
                 }
                 for opt in &self.options {
+                    if self.options_source.is_some() && opt.is_empty() {
+                        continue;
+                    }
                     require_plain(opt, "select option")?;
                     if opt.is_empty() || opt.len() > MAX_LIST_ITEM {
                         return Err("panel.json: select option length".into());
                     }
                 }
                 if let Some(source) = &self.options_source {
-                    if source != "system_fonts" {
+                    if source != "system_fonts" && source != "tts_voices" {
                         return Err("panel.json: unknown options_source".into());
                     }
                 }

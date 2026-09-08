@@ -246,6 +246,23 @@ pub use bindings::exports::modus::abi::lifecycle::Guest;
 ))]
 pub use bindings::modus::abi::{assets, clock, log, self_info, settings, types, wait};
 
+#[cfg(any(
+    feature = "consumer",
+    feature = "emitter",
+    feature = "connector",
+    feature = "provider",
+    feature = "widget",
+    feature = "reader",
+    feature = "player",
+    feature = "bridge",
+    feature = "embedder",
+    feature = "rates",
+    feature = "alerter",
+    feature = "commander",
+    feature = "store",
+))]
+pub mod random;
+
 /// Store an i18n label: Core resolves `label_key` from `assets/i18n/{locale}.json`.
 /// `params` — optional JSON object string, e.g. `r#"{"err":"boom"}"#`.
 #[cfg(any(
@@ -321,7 +338,7 @@ pub use bindings::modus::abi::rates_publish;
 pub use bindings::modus::abi::rates;
 
 #[cfg(feature = "alerter")]
-pub use bindings::modus::abi::{alert_enqueue, history_read, ui_slot};
+pub use bindings::modus::abi::{alert_enqueue, history_read, media_audio, ui_slot};
 
 #[cfg(feature = "commander")]
 pub use bindings::modus::abi::chat_act;

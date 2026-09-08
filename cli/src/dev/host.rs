@@ -6,6 +6,7 @@ use super::kv::DevKv;
 use super::mailbox::{Mail, Mailbox};
 use super::media::DevCache;
 use super::net::DevNet;
+use super::random::RandomGate;
 use super::settings::DevSettings;
 use super::wit_map::{map_payload, to_wit_event};
 use crate::hosts::HostSpec;
@@ -48,6 +49,7 @@ pub(crate) struct HostData {
     pub(crate) mailbox: Arc<Mailbox>,
     pub(crate) bus: Arc<Bus>,
     pub(crate) history: Arc<HistoryGate>,
+    pub(crate) random: Arc<RandomGate>,
     pub(crate) net: Arc<DevNet>,
     pub(crate) cache: Arc<DevCache>,
     pub(crate) kv: Arc<DevKv>,
@@ -73,6 +75,12 @@ impl HostData {
 }
 
 impl modus::abi::types::Host for HostData {}
+
+impl modus::abi::random::Host for HostData {
+    fn fill(&mut self, len: u32) -> Result<Vec<u8>, String> {
+        self.random.fill(&self.plugin_id, len)
+    }
+}
 
 impl modus::abi::clock::Host for HostData {
     fn sleep_ms(&mut self, ms: u32) {
@@ -148,6 +156,21 @@ impl modus::abi::wait::Host for HostData {
                     return self.wait();
                 }
             }
+            Mail::TtsRendered {
+                request_id,
+                key,
+                error,
+            } => {
+                if self.has_audio {
+                    modus::abi::wait::Ready::TtsRendered(modus::abi::wait::TtsRendered {
+                        request_id,
+                        key,
+                        error,
+                    })
+                } else {
+                    return self.wait();
+                }
+            }
         }
     }
 }
@@ -184,13 +207,55 @@ impl modus::abi::alert_enqueue::Host for HostData {
         let id = uuid::Uuid::new_v4().to_string();
         let _ = writeln!(
             io::stderr(),
-            "alert enqueue {id} {:?} event={} duration={} title={}",
+            "alert enqueue {id} {:?} event={} lane={} exclusive={} replay={} pending_audio={} pending_ttl_ms={} duration={} title={}",
             job.priority,
             job.event_id,
+            job.lane,
+            job.exclusive,
+            job.replay,
+            job.pending_audio,
+            job.pending_ttl_ms,
             job.duration_ms,
             job.title
         );
         Ok(id)
+    }
+
+    fn attach(&mut self, job: modus::abi::alert_enqueue::AttachJob) -> Result<String, String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = writeln!(
+            io::stderr(),
+            "alert attach {id} parent={:?} event={:?} tag={} title={}",
+            job.parent_job_id,
+            job.event_id,
+            job.tag,
+            job.title
+        );
+        Ok(id)
+    }
+
+    fn mark_ready(
+        &mut self,
+        event_id: String,
+        audio_key: Option<String>,
+        duration_ms: Option<u32>,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        let _ = writeln!(
+            io::stderr(),
+            "alert mark-ready event={} key={:?} duration={:?}",
+            event_id,
+            audio_key,
+            duration_ms
+        );
+        Ok(())
     }
 
     fn complete(
@@ -483,6 +548,13 @@ impl modus::abi::media_audio::Host for HostData {
             modus::abi::media_audio::Spec::Tts(text) => {
                 format!("tts:{}", text.chars().take(40).collect::<String>())
             }
+            modus::abi::media_audio::Spec::TtsEx(tts) => {
+                format!(
+                    "tts-ex:{} voice={}",
+                    tts.text.chars().take(40).collect::<String>(),
+                    tts.voice.as_deref().unwrap_or("-")
+                )
+            }
         };
         let _ = writeln!(io::stderr(), "media.audio play {id} {label}");
         let mailbox = Arc::clone(&self.mailbox);
@@ -502,6 +574,87 @@ impl modus::abi::media_audio::Host for HostData {
         let _ = writeln!(io::stderr(), "media.audio stop {id}");
         self.mailbox.wake_media_ended(id);
         Ok(())
+    }
+
+    fn duration_ms(&mut self, spec: modus::abi::media_audio::Spec) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        match spec {
+            modus::abi::media_audio::Spec::Tts(_) | modus::abi::media_audio::Spec::TtsEx(_) => {
+                Err("tts duration unknown".into())
+            }
+            modus::abi::media_audio::Spec::Url(url) => {
+                let key = url
+                    .strip_prefix("modus-cache://")
+                    .unwrap_or(url.as_str())
+                    .trim();
+                if key.len() == 64 && key.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+                    let Some((_, bytes)) = self.cache.blob(key) else {
+                        return Err("not in cache".into());
+                    };
+                    let ms = (bytes.len() as u64)
+                        .saturating_mul(8)
+                        .saturating_mul(1000)
+                        / 128_000;
+                    return Ok(ms.clamp(50, 120_000) as u32);
+                }
+                Ok(1_000)
+            }
+            modus::abi::media_audio::Spec::Asset(_) => Ok(1_000),
+        }
+    }
+
+    fn list_voices(&mut self) -> Result<Vec<modus::abi::media_audio::Voice>, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        Ok(vec![modus::abi::media_audio::Voice {
+            id: "dev-voice".into(),
+            name: "Dev Voice".into(),
+            culture: "en-US".into(),
+        }])
+    }
+
+    fn render_tts(&mut self, tts: modus::abi::media_audio::Tts) -> Result<String, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        // Stable 64-hex stub key (not a real blob).
+        let key = format!("{:0>64}", format!("{:x}", tts.text.len().max(1)));
+        let _ = writeln!(
+            io::stderr(),
+            "media.audio render-tts key={} text={} voice={}",
+            &key[..16.min(key.len())],
+            tts.text.chars().take(40).collect::<String>(),
+            tts.voice.as_deref().unwrap_or("-")
+        );
+        Ok(key)
+    }
+
+    fn start_render_tts(&mut self, tts: modus::abi::media_audio::Tts) -> Result<String, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let key = format!("{:0>64}", format!("{:x}", tts.text.len().max(1)));
+        let mailbox = Arc::clone(&self.mailbox);
+        let req = request_id.clone();
+        let _ = writeln!(
+            io::stderr(),
+            "media.audio start-render-tts id={} text={}",
+            &req[..8.min(req.len())],
+            tts.text.chars().take(40).collect::<String>()
+        );
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            mailbox.wake_tts_rendered(req, Some(key), None);
+        });
+        Ok(request_id)
     }
 }
 

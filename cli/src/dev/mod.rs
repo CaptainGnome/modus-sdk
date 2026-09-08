@@ -8,6 +8,7 @@ mod kv;
 mod mailbox;
 mod media;
 mod net;
+mod random;
 mod settings;
 mod wit_map;
 
@@ -145,6 +146,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         mailbox: Arc::clone(&mailbox),
         bus: Arc::clone(&bus),
         history: Arc::new(HistoryGate::new()),
+        random: Arc::new(random::RandomGate::new()),
         net: Arc::clone(&net),
         cache: Arc::new(DevCache::new()),
         kv: Arc::new(DevKv::new()),

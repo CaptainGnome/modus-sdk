@@ -94,6 +94,17 @@ impl DevCache {
         Ok(())
     }
 
+    pub fn blob(&self, key: &str) -> Option<(String, Vec<u8>)> {
+        if !is_cache_key(key) {
+            return None;
+        }
+        self.blobs
+            .lock()
+            .ok()?
+            .get(key)
+            .map(|(mime, bytes)| (mime.clone(), bytes.clone()))
+    }
+
     fn store(
         &self,
         plugin_id: &str,
