@@ -35,7 +35,7 @@ enum Command {
         author: Option<String>,
         #[arg(long)]
         dir: Option<PathBuf>,
-        #[arg(long)]
+        #[arg(long, help = "Guest language: rust (default), ts, js")]
         lang: Option<String>,
         #[arg(long, value_enum)]
         mode: Option<new::PanelMode>,

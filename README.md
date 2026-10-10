@@ -4,7 +4,7 @@ Guest SDK and CLI for **Modus ABI 2** plugins: crate `modus-sdk`, binary `modus`
 
 **Repos:** [modus-sdk](https://github.com/CaptainGnome/modus-sdk) (this repo) · docs [modus-docs](https://github.com/CaptainGnome/modus-docs) ([site](https://captaingnome.github.io/modus-docs/)) · examples [modus-examples](https://github.com/CaptainGnome/modus-examples)
 
-Author path: `new` → `dev` → `pack` → install `.mplug` into the **shipped** Modus host app. Language — Rust. Do not put secrets in the package.
+Author path: `new` → `dev` → `pack` → install `.mplug` into the **shipped** Modus host app. Guest language — Rust (all roles) or JS/TS via sibling [modus-sdk-js](https://github.com/CaptainGnome/modus-sdk-js) (`--lang ts|js`, widget/alerter). Do not put secrets in the package.
 
 ## Clone
 

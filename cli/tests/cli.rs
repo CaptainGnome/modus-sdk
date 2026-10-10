@@ -352,7 +352,7 @@ fn new_panel_native_and_web() {
 }
 
 #[test]
-fn new_rejects_non_rust() {
+fn new_rejects_unsupported_lang() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("go");
     let err = run_err(&[
@@ -365,8 +365,151 @@ fn new_rejects_non_rust() {
         "--lang",
         "go",
     ]);
-    assert!(err.contains("Rust"), "{err}");
+    assert!(err.contains("unsupported --lang"), "{err}");
     assert!(!dir.join("Cargo.toml").exists());
+    assert!(!dir.join("package.json").exists());
+}
+
+#[test]
+fn new_accepts_ts_widget() {
+    let Some(_) = sdk_js_root() else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("hud");
+    run_ok(&[
+        "new",
+        "widget",
+        "--id",
+        "com.example.hud",
+        "--dir",
+        dir.to_str().unwrap(),
+        "--lang",
+        "ts",
+    ]);
+    assert!(dir.join("package.json").is_file());
+    assert!(dir.join("guest.ts").is_file());
+    assert!(dir.join("tsconfig.json").is_file());
+    assert!(dir.join("manifest").is_file());
+    assert!(dir.join("scripts/rolldown.config.mjs").is_file());
+    assert!(dir.join("assets/web/index.html").is_file());
+    assert!(!dir.join("Cargo.toml").exists());
+}
+
+#[test]
+fn new_accepts_js_alerter() {
+    let Some(_) = sdk_js_root() else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("alerts");
+    run_ok(&[
+        "new",
+        "alerter",
+        "--id",
+        "com.example.alerts",
+        "--dir",
+        dir.to_str().unwrap(),
+        "--lang",
+        "js",
+    ]);
+    assert!(dir.join("package.json").is_file());
+    assert!(dir.join("guest.js").is_file());
+    assert!(!dir.join("tsconfig.json").exists());
+    assert!(!dir.join("Cargo.toml").exists());
+}
+
+#[test]
+fn new_rejects_ts_consumer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("bus");
+    let err = run_err(&[
+        "new",
+        "consumer",
+        "--id",
+        "com.example.bus",
+        "--dir",
+        dir.to_str().unwrap(),
+        "--lang",
+        "ts",
+    ]);
+    assert!(err.contains("widget and alerter only"), "{err}");
+    assert!(!dir.join("package.json").exists());
+}
+
+/// Sibling `modus-sdk-js` next to `modus-sdk` (product submodule or public contour).
+fn sdk_js_root() -> Option<std::path::PathBuf> {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../modus-sdk-js");
+    dir.join("package.json").is_file().then_some(dir)
+}
+
+fn node_available() -> bool {
+    Command::new("node")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn pack_widget_ts() {
+    let Some(_) = sdk_js_root() else {
+        return;
+    };
+    if !node_available() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("hud");
+    run_ok(&[
+        "new",
+        "widget",
+        "--id",
+        "com.example.hud",
+        "--dir",
+        dir.to_str().unwrap(),
+        "--lang",
+        "ts",
+    ]);
+    let packed = run_ok(&["pack", dir.to_str().unwrap()]);
+    assert!(packed.contains("hud.mplug"), "{packed}");
+    let mplug = dir.join("dist/hud.mplug");
+    assert!(mplug.is_file());
+    let wasm = unzip_wasm(&mplug);
+    let imports = component_imports(&wasm);
+    assert!(
+        imports.iter().all(|imp| imp.starts_with("modus:abi/")),
+        "{imports:?}"
+    );
+    assert!(
+        imports.iter().all(|imp| !imp.contains("wasi")),
+        "{imports:?}"
+    );
+    run_ok(&["check", mplug.to_str().unwrap()]);
+}
+
+#[test]
+fn dev_widget_ts_sees_lifecycle() {
+    let Some(_) = sdk_js_root() else {
+        return;
+    };
+    if !node_available() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("hud");
+    run_ok(&[
+        "new",
+        "widget",
+        "--id",
+        "com.example.hud",
+        "--dir",
+        dir.to_str().unwrap(),
+        "--lang",
+        "ts",
+    ]);
+    let out = wait_dev_output(&["dev", dir.to_str().unwrap()], "init");
+    assert!(out.contains("init"), "{out}");
 }
 
 fn wait_dev_output(args: &[&str], needle: &str) -> String {

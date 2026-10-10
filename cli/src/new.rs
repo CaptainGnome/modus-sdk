@@ -46,6 +46,35 @@ pub enum PanelMode {
     Web,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lang {
+    Rust,
+    Ts,
+    Js,
+}
+
+impl Lang {
+    fn parse(raw: Option<&str>) -> Result<Self, String> {
+        match raw {
+            None => Ok(Self::Rust),
+            Some(s) if s.eq_ignore_ascii_case("rust") => Ok(Self::Rust),
+            Some(s) if s.eq_ignore_ascii_case("ts") || s.eq_ignore_ascii_case("typescript") => {
+                Ok(Self::Ts)
+            }
+            Some(s) if s.eq_ignore_ascii_case("js") || s.eq_ignore_ascii_case("javascript") => {
+                Ok(Self::Js)
+            }
+            Some(other) => Err(format!(
+                "unsupported --lang {other} (rust, ts, js)"
+            )),
+        }
+    }
+
+    fn is_js(self) -> bool {
+        matches!(self, Self::Ts | Self::Js)
+    }
+}
+
 pub struct NewArgs {
     pub role: Role,
     pub id: String,
@@ -57,13 +86,12 @@ pub struct NewArgs {
 }
 
 pub fn scaffold(args: NewArgs) -> Result<PathBuf, String> {
-    if let Some(lang) = args.lang.as_deref() {
-        if !lang.eq_ignore_ascii_case("rust") {
-            return Err("S1 Rust only".into());
-        }
-    }
+    let lang = Lang::parse(args.lang.as_deref())?;
     if args.mode.is_some() && args.role != Role::Panel {
         return Err("mode is only for panel".into());
+    }
+    if lang.is_js() && !matches!(args.role, Role::Widget | Role::Alerter) {
+        return Err("JS/TS: widget and alerter only".into());
     }
     if !is_plugin_id(&args.id) {
         return Err("plugin id: reverse-DNS required (com.publisher.name)".into());
@@ -87,54 +115,140 @@ pub fn scaffold(args: NewArgs) -> Result<PathBuf, String> {
     } else {
         fs::create_dir_all(&dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     }
-    fs::create_dir_all(dir.join("src")).map_err(|err| format!("src: {err}"))?;
 
     let name = args.name.unwrap_or_else(|| crate_name.to_string());
     let author = args.author.unwrap_or_else(|| "author".to_string());
-    let sdk_path = sdk_guest_path(&dir)?;
-    let cargo = cargo_toml(crate_name, &sdk_path, args.role.feature());
-    fs::write(dir.join("Cargo.toml"), cargo).map_err(|err| format!("Cargo.toml: {err}"))?;
-    fs::write(dir.join("src/lib.rs"), lib_rs(args.role, args.mode))
-        .map_err(|err| format!("src/lib.rs: {err}"))?;
-    fs::write(
-        dir.join("manifest"),
-        manifest_json(&args.id, &name, &author, args.role, crate_name, args.mode),
-    )
-    .map_err(|err| format!("manifest: {err}"))?;
-    fs::write(dir.join(".gitignore"), "/target\n").map_err(|err| format!(".gitignore: {err}"))?;
-    if args.role == Role::Widget {
-        write_web_assets(&dir, "web")?;
-    }
-    if args.role == Role::Embedder {
-        write_embed_assets(&dir)?;
-    }
-    if args.role == Role::Player {
-        write_player_sfx(&dir)?;
-    }
-    if args.role == Role::Bridge {
-        write_bridge_settings(&dir)?;
-    }
-    if args.role == Role::Rates {
-        write_rates_settings(&dir)?;
-    }
-    if args.role == Role::Alerter {
-        write_web_assets(&dir, "web")?;
-    }
-    if args.role == Role::Panel {
-        match args.mode.unwrap_or(PanelMode::Native) {
-            PanelMode::Native => write_panel_json(&dir)?,
-            PanelMode::Web => write_web_assets(&dir, "panel")?,
-        }
+
+    if lang.is_js() {
+        scaffold_js(&dir, crate_name, &args.id, &name, &author, args.role, lang)?;
+    } else {
+        scaffold_rust(&dir, crate_name, &args.id, &name, &author, args.role, args.mode)?;
     }
     Ok(dir)
 }
 
+fn scaffold_rust(
+    dir: &Path,
+    crate_name: &str,
+    id: &str,
+    name: &str,
+    author: &str,
+    role: Role,
+    mode: Option<PanelMode>,
+) -> Result<(), String> {
+    fs::create_dir_all(dir.join("src")).map_err(|err| format!("src: {err}"))?;
+    let sdk_path = sdk_guest_path(dir)?;
+    let cargo = cargo_toml(crate_name, &sdk_path, role.feature());
+    fs::write(dir.join("Cargo.toml"), cargo).map_err(|err| format!("Cargo.toml: {err}"))?;
+    fs::write(dir.join("src/lib.rs"), lib_rs(role, mode))
+        .map_err(|err| format!("src/lib.rs: {err}"))?;
+    fs::write(
+        dir.join("manifest"),
+        manifest_json(id, name, author, role, crate_name, mode),
+    )
+    .map_err(|err| format!("manifest: {err}"))?;
+    fs::write(dir.join(".gitignore"), "/target\n").map_err(|err| format!(".gitignore: {err}"))?;
+    write_role_assets(dir, role, mode)?;
+    Ok(())
+}
+
+fn scaffold_js(
+    dir: &Path,
+    crate_name: &str,
+    id: &str,
+    name: &str,
+    author: &str,
+    role: Role,
+    lang: Lang,
+) -> Result<(), String> {
+    let sdk_path = sdk_js_path(dir)?;
+    fs::write(
+        dir.join("package.json"),
+        package_json(crate_name, &sdk_path, lang),
+    )
+    .map_err(|err| format!("package.json: {err}"))?;
+    let guest = guest_js(role, lang);
+    let guest_name = match lang {
+        Lang::Ts => "guest.ts",
+        Lang::Js => "guest.js",
+        Lang::Rust => unreachable!(),
+    };
+    fs::write(dir.join(guest_name), guest).map_err(|err| format!("{guest_name}: {err}"))?;
+    if lang == Lang::Ts {
+        fs::write(dir.join("tsconfig.json"), tsconfig_json())
+            .map_err(|err| format!("tsconfig.json: {err}"))?;
+    }
+    fs::create_dir_all(dir.join("scripts")).map_err(|err| format!("scripts: {err}"))?;
+    fs::write(
+        dir.join("scripts/rolldown.config.mjs"),
+        ROLLDOWN_CONFIG,
+    )
+    .map_err(|err| format!("rolldown.config.mjs: {err}"))?;
+    fs::write(
+        dir.join("manifest"),
+        manifest_json(id, name, author, role, crate_name, None),
+    )
+    .map_err(|err| format!("manifest: {err}"))?;
+    fs::write(
+        dir.join(".gitignore"),
+        "/target\n/node_modules\n/dist\n",
+    )
+    .map_err(|err| format!(".gitignore: {err}"))?;
+    write_role_assets(dir, role, None)?;
+    Ok(())
+}
+
+fn write_role_assets(dir: &Path, role: Role, mode: Option<PanelMode>) -> Result<(), String> {
+    if role == Role::Widget {
+        write_web_assets(dir, "web")?;
+    }
+    if role == Role::Embedder {
+        write_embed_assets(dir)?;
+    }
+    if role == Role::Player {
+        write_player_sfx(dir)?;
+    }
+    if role == Role::Bridge {
+        write_bridge_settings(dir)?;
+    }
+    if role == Role::Rates {
+        write_rates_settings(dir)?;
+    }
+    if role == Role::Alerter {
+        write_web_assets(dir, "web")?;
+    }
+    if role == Role::Panel {
+        match mode.unwrap_or(PanelMode::Native) {
+            PanelMode::Native => write_panel_json(dir)?,
+            PanelMode::Web => write_web_assets(dir, "panel")?,
+        }
+    }
+    Ok(())
+}
+
 fn sdk_guest_path(plugin_dir: &Path) -> Result<String, String> {
     let guest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../guest");
-    let guest = strip_verbatim(
-        guest
+    relative_to_plugin(plugin_dir, &guest, "sdk/guest")
+}
+
+fn sdk_js_path(plugin_dir: &Path) -> Result<String, String> {
+    let sdk_js = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../modus-sdk-js");
+    relative_to_plugin(
+        plugin_dir,
+        &sdk_js,
+        "modus-sdk-js (clone next to modus-sdk)",
+    )
+}
+
+fn relative_to_plugin(
+    plugin_dir: &Path,
+    target: &Path,
+    label: &str,
+) -> Result<String, String> {
+    let target = strip_verbatim(
+        target
             .canonicalize()
-            .map_err(|err| format!("sdk/guest: {err}"))?,
+            .map_err(|err| format!("{label}: {err}"))?,
     );
     fs::create_dir_all(plugin_dir).map_err(|err| format!("{}: {err}", plugin_dir.display()))?;
     let plugin = if plugin_dir.is_absolute() {
@@ -149,7 +263,7 @@ fn sdk_guest_path(plugin_dir: &Path) -> Result<String, String> {
             .canonicalize()
             .map_err(|err| format!("{}: {err}", plugin.display()))?,
     );
-    let rel = pathdiff::diff_paths(&guest, &plugin).unwrap_or(guest);
+    let rel = pathdiff::diff_paths(&target, &plugin).unwrap_or(target);
     Ok(rel.to_string_lossy().replace('\\', "/"))
 }
 
@@ -159,6 +273,115 @@ fn strip_verbatim(path: PathBuf) -> PathBuf {
         PathBuf::from(rest)
     } else {
         path
+    }
+}
+
+const ROLLDOWN_CONFIG: &str = r#"import { defineConfig } from "rolldown";
+
+/** Keep WIT imports external for ComponentizeJS. */
+export default defineConfig({
+  external: [/^modus:abi\//],
+});
+"#;
+
+fn package_json(crate_name: &str, sdk_path: &str, lang: Lang) -> String {
+    let typescript = if lang == Lang::Ts {
+        r#",
+    "typescript": "5.8.3""#
+    } else {
+        ""
+    };
+    format!(
+        r#"{{
+  "name": "{crate_name}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {{
+    "modus-sdk": "file:{sdk_path}"
+  }},
+  "devDependencies": {{
+    "@bytecodealliance/componentize-js": "0.23.0",
+    "@bytecodealliance/jco": "1.37.0"{typescript}
+  }},
+  "engines": {{
+    "node": ">=20"
+  }}
+}}
+"#
+    )
+}
+
+fn tsconfig_json() -> &'static str {
+    r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["guest.ts"]
+}
+"#
+}
+
+fn guest_js(role: Role, lang: Lang) -> String {
+    let _ = lang;
+    match role {
+        Role::Widget => r#"import {
+  definePlugin,
+  wait,
+  info,
+  uiSlot,
+} from "modus-sdk/widget";
+
+const { lifecycle } = definePlugin({
+  init() {
+    wait.subscribe();
+    info("init");
+    const html = new TextEncoder().encode("<div>hello</div>");
+    uiSlot.post(html);
+  },
+  run() {
+    for (;;) {
+      const ready = wait.wait();
+      if (ready.tag === "stop") return;
+    }
+  },
+});
+
+export { lifecycle };
+"#
+        .into(),
+        Role::Alerter => r#"import {
+  definePlugin,
+  wait,
+  info,
+  alertEnqueue,
+} from "modus-sdk/alerter";
+
+const { lifecycle } = definePlugin({
+  init() {
+    wait.subscribe();
+    info("init");
+  },
+  run() {
+    for (;;) {
+      const ready = wait.wait();
+      if (ready.tag === "stop") return;
+      if (ready.tag === "alert-play") {
+        alertEnqueue.complete(ready.val.jobId, { tag: "ok", val: undefined });
+      }
+    }
+  },
+});
+
+export { lifecycle };
+"#
+        .into(),
+        _ => unreachable!("JS/TS roles gated in scaffold"),
     }
 }
 
@@ -212,7 +435,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -325,7 +550,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -478,7 +705,9 @@ impl Guest for Plugin {
                 | Ready::Resume
                 | Ready::Ui(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -566,7 +795,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -614,7 +845,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -716,7 +949,9 @@ fn run_session(account_id: &str) -> Outcome {
             }
             Ready::Timer | Ready::Bus(_) | Ready::Settings | Ready::Resume | Ready::Ui(_) | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
         }
     }
 }
@@ -791,7 +1026,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -840,7 +1077,9 @@ impl Guest for Plugin {
                 | Ready::Resume
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -892,7 +1131,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -941,7 +1182,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -1065,7 +1308,9 @@ impl Guest for Plugin {
                 | Ready::Act(_)
                 | Ready::Settings
                 | Ready::Ui(_)
-                | Ready::MediaEnded(_) => {}
+                | Ready::MediaEnded(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -1206,7 +1451,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }
@@ -1387,7 +1634,9 @@ impl Guest for Plugin {
                 | Ready::Resume
                 | Ready::MediaEnded(_)
                 | Ready::AlertPlay(_)
-                | Ready::AlertStop(_) => {}
+                | Ready::AlertStop(_)
+                | Ready::AlertReplay(_)
+                | Ready::TtsRendered(_) => {}
             }
         }
     }

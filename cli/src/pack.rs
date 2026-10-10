@@ -23,14 +23,37 @@ impl Profile {
     }
 }
 
+enum ProjectKind {
+    Rust,
+    Js,
+}
+
+fn detect_project(plugin_dir: &Path) -> Result<ProjectKind, String> {
+    let cargo = plugin_dir.join("Cargo.toml").is_file();
+    let pkg = plugin_dir.join("package.json").is_file();
+    match (cargo, pkg) {
+        (true, false) => Ok(ProjectKind::Rust),
+        (false, true) => Ok(ProjectKind::Js),
+        (true, true) => Err("ambiguous: both Cargo.toml and package.json".into()),
+        (false, false) => Err(format!(
+            "missing Cargo.toml or package.json in {}",
+            plugin_dir.display()
+        )),
+    }
+}
+
 pub fn compile_component(plugin_dir: &Path) -> Result<Vec<u8>, String> {
     compile_component_profile(plugin_dir, Profile::Release)
 }
 
 pub fn compile_component_profile(plugin_dir: &Path, profile: Profile) -> Result<Vec<u8>, String> {
-    if !plugin_dir.join("Cargo.toml").is_file() {
-        return Err(format!("missing Cargo.toml in {}", plugin_dir.display()));
+    match detect_project(plugin_dir)? {
+        ProjectKind::Rust => compile_rust_component(plugin_dir, profile),
+        ProjectKind::Js => compile_js_component(plugin_dir),
     }
+}
+
+fn compile_rust_component(plugin_dir: &Path, profile: Profile) -> Result<Vec<u8>, String> {
     let package_name = crate_package_name(plugin_dir)?;
     cargo_build(plugin_dir, profile)?;
     let wasm_path = wasm_artifact(plugin_dir, &package_name, profile);
@@ -41,6 +64,103 @@ pub fn compile_component_profile(plugin_dir: &Path, profile: Profile) -> Result<
         )
     })?;
     encode_component(&module)
+}
+
+fn abs_plugin_dir(plugin_dir: &Path) -> Result<PathBuf, String> {
+    if plugin_dir.is_absolute() {
+        return Ok(plugin_dir.to_path_buf());
+    }
+    let cwd = env::current_dir().map_err(|err| format!("cwd: {err}"))?;
+    Ok(cwd.join(plugin_dir))
+}
+
+fn compile_js_component(plugin_dir: &Path) -> Result<Vec<u8>, String> {
+    let plugin_dir = abs_plugin_dir(plugin_dir)?;
+    let entry = if plugin_dir.join("guest.ts").is_file() {
+        plugin_dir.join("guest.ts")
+    } else if plugin_dir.join("guest.js").is_file() {
+        plugin_dir.join("guest.js")
+    } else {
+        return Err(format!(
+            "missing guest.ts or guest.js in {}",
+            plugin_dir.display()
+        ));
+    };
+    npm_install(&plugin_dir)?;
+    let wit = plugin_dir.join("node_modules/modus-sdk/wit");
+    if !wit.is_dir() {
+        return Err(format!(
+            "missing {} — npm install modus-sdk (file: sibling modus-sdk-js)",
+            wit.display()
+        ));
+    }
+    let bundle_config = plugin_dir.join("scripts/rolldown.config.mjs");
+    if !bundle_config.is_file() {
+        return Err(format!("missing {}", bundle_config.display()));
+    }
+    let jco = plugin_dir.join("node_modules/@bytecodealliance/jco/dist/jco.js");
+    if !jco.is_file() {
+        return Err(format!(
+            "missing {} — need @bytecodealliance/jco 1.37.0",
+            jco.display()
+        ));
+    }
+    let out = plugin_dir.join("target/module.wasm");
+    fs::create_dir_all(plugin_dir.join("target")).map_err(|err| format!("target: {err}"))?;
+
+    let node = env::var("NODE").unwrap_or_else(|_| "node".into());
+    let status = Command::new(&node)
+        .arg(&jco)
+        .arg("componentize")
+        .arg(&entry)
+        .arg("--wit")
+        .arg(&wit)
+        .arg("--world-name")
+        .arg("plugin")
+        .arg("--disable")
+        .arg("stdio")
+        .arg("--disable")
+        .arg("random")
+        .arg("--disable")
+        .arg("clocks")
+        .arg("--disable")
+        .arg("http")
+        .arg("--disable")
+        .arg("fetch-event")
+        .arg("--bundle")
+        .arg("--bundle-config")
+        .arg(&bundle_config)
+        .arg("-o")
+        .arg(&out)
+        .current_dir(&plugin_dir)
+        .status()
+        .map_err(|err| format!("node/jco: {err}"))?;
+    if !status.success() {
+        return Err("jco componentize failed".into());
+    }
+    fs::read(&out).map_err(|err| format!("read {}: {err}", out.display()))
+}
+
+fn npm_bin() -> String {
+    env::var("NPM").unwrap_or_else(|_| {
+        if cfg!(windows) {
+            "npm.cmd".into()
+        } else {
+            "npm".into()
+        }
+    })
+}
+
+fn npm_install(plugin_dir: &Path) -> Result<(), String> {
+    let status = Command::new(npm_bin())
+        .arg("install")
+        .current_dir(plugin_dir)
+        .status()
+        .map_err(|err| format!("npm: {err} (Node >= 20 required)"))?;
+    if !status.success() {
+        return Err("npm install failed".into());
+    }
+    Ok(())
 }
 
 pub fn pack(plugin_dir: &Path) -> Result<PathBuf, String> {

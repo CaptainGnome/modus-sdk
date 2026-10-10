@@ -41,6 +41,9 @@ fn scan_dir(dir: &Path) -> Result<bool, String> {
 }
 
 pub fn reject_dual_bindgen(plugin_dir: &Path) -> Result<(), String> {
+    if !plugin_dir.join("Cargo.toml").is_file() {
+        return Ok(());
+    }
     if has_modus_sdk(plugin_dir)? && has_wit_bindgen_generate(plugin_dir)? {
         return Err("manual WIT plus SDK — dual bindgen".into());
     }
