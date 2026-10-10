@@ -244,7 +244,41 @@ pub use bindings::exports::modus::abi::lifecycle::Guest;
     feature = "commander",
     feature = "store",
 ))]
-pub use bindings::modus::abi::{assets, clock, log, self_info, settings, types, wait};
+pub use bindings::modus::abi::{assets, clock, log, plugins, self_info, settings, types, wait};
+
+#[cfg(any(
+    feature = "consumer",
+    feature = "emitter",
+    feature = "connector",
+    feature = "provider",
+    feature = "widget",
+    feature = "reader",
+    feature = "player",
+    feature = "bridge",
+    feature = "embedder",
+    feature = "rates",
+    feature = "alerter",
+    feature = "commander",
+    feature = "store",
+))]
+mod plugins_util;
+
+#[cfg(any(
+    feature = "consumer",
+    feature = "emitter",
+    feature = "connector",
+    feature = "provider",
+    feature = "widget",
+    feature = "reader",
+    feature = "player",
+    feature = "bridge",
+    feature = "embedder",
+    feature = "rates",
+    feature = "alerter",
+    feature = "commander",
+    feature = "store",
+))]
+pub use plugins_util::platforms_with_kind;
 
 #[cfg(any(
     feature = "consumer",

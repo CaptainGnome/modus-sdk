@@ -106,6 +106,7 @@ interface types {
     plugin-reconnecting,
     plugin-load-failed,
     plugin-removed,
+    plugins-changed,
     auth-connected,
     auth-disconnected,
     auth-revoked,
@@ -277,6 +278,8 @@ interface net-ws {
 
 interface clock {
   sleep-ms: func(ms: u32);
+  /// UTC unix time, milliseconds since 1970-01-01.
+  now-ms: func() -> s64;
 }
 
 /// Host CSPRNG. `len` 1…256; 0 / >cap → err. No grant (base API).
@@ -354,10 +357,11 @@ interface alert-enqueue {
     /// Default true (ABI 35 solo). Non-exclusive must be set explicitly.
     exclusive: bool,
     /// Same event-id; insert at head of lane waiting. Ignores skip_alert.
+    /// May combine with pending-audio (e.g. Core TTS on replay).
     replay: bool,
     /// Enqueue as unready until `mark-ready` or pending TTL. Incompatible with replay.
     pending-audio: bool,
-    /// 0 → Core default (15s). Expire → ready without voice (not drop).
+    /// 0 → Core default (120s). Expire → ready without voice (not drop).
     pending-ttl-ms: u32,
   }
 
@@ -464,6 +468,21 @@ interface rates {
   convert-to-base: func(amount: f64, %from: string) -> result<f64, string>;
 }
 
+/// Installed plugin registry (emit classification). No grant. Storm like history.
+interface plugins {
+  record entry {
+    plugin-id: string,
+    name: string,
+    enabled: bool,
+    platform-id: option<string>,
+    emits: list<string>,
+    emits-custom: list<string>,
+  }
+
+  /// Snapshot of installed non-quarantine plugins. No grant.
+  %list: func() -> result<list<entry>, string>;
+}
+
 interface lifecycle {
   init: func();
   run: func();
@@ -497,6 +516,7 @@ world plugin {
   import media-embed;
   import rates-publish;
   import rates;
+  import plugins;
   export lifecycle;
 }
 
@@ -526,5 +546,6 @@ world runtime {
   import media-embed;
   import rates-publish;
   import rates;
+  import plugins;
   export lifecycle;
 }

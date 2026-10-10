@@ -124,7 +124,10 @@ pub fn run(args: DevArgs) -> Result<(), String> {
     let host = HostData {
         plugin_id: manifest.id.clone(),
         version: manifest.version.clone(),
+        name: manifest.name.fallback().to_string(),
         platform_id: manifest.platform_id.clone(),
+        emits: manifest.emits.clone(),
+        emits_custom: manifest.emits_custom.clone(),
         plugin_dir: plugin_dir.clone(),
         has_emit: manifest.grants_bus_emit(),
         has_auth: manifest.grants_auth(),
@@ -146,6 +149,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         mailbox: Arc::clone(&mailbox),
         bus: Arc::clone(&bus),
         history: Arc::new(HistoryGate::new()),
+        plugins_storm: Arc::new(HistoryGate::new()),
         random: Arc::new(random::RandomGate::new()),
         net: Arc::clone(&net),
         cache: Arc::new(DevCache::new()),

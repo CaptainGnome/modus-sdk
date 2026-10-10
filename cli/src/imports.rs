@@ -10,6 +10,7 @@ const BASE_IMPORTS: &[&str] = &[
     "modus:abi/random@2.0.0",
     "modus:abi/settings@2.0.0",
     "modus:abi/assets@2.0.0",
+    "modus:abi/plugins@2.0.0",
 ];
 
 const KNOWN_IMPORTS: &[&str] = &[

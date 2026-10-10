@@ -113,6 +113,9 @@ pub struct PanelColumn {
     pub accept: Vec<MediaAccept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// `"plugin_platforms"` / `"plugin_platforms:<canon-kind>"` — FE merges registry platforms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options_source: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -182,6 +185,26 @@ pub struct PanelBlock {
 
 fn is_false(v: &bool) -> bool {
     !*v
+}
+
+fn is_plugin_platforms_source(source: &str) -> bool {
+    if source == "plugin_platforms" {
+        return true;
+    }
+    let Some(kind) = source.strip_prefix("plugin_platforms:") else {
+        return false;
+    };
+    matches!(
+        kind,
+        "message"
+            | "donation"
+            | "sub"
+            | "follow"
+            | "raid"
+            | "viewer_count"
+            | "reward"
+            | "moderation"
+    )
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -556,7 +579,10 @@ impl PanelBlock {
                     }
                 }
                 if let Some(source) = &self.options_source {
-                    if source != "system_fonts" && source != "tts_voices" {
+                    if source != "system_fonts"
+                        && source != "tts_voices"
+                        && !is_plugin_platforms_source(source)
+                    {
                         return Err("panel.json: unknown options_source".into());
                     }
                 }
@@ -753,7 +779,15 @@ impl PanelColumn {
                 }
             }
             ColumnType::MultiEnum => {
-                if self.options.is_empty() || self.options.len() > MAX_ENUM_OPTIONS {
+                let has_source = self
+                    .options_source
+                    .as_deref()
+                    .is_some_and(is_plugin_platforms_source);
+                if has_source {
+                    if self.options.len() > MAX_ENUM_OPTIONS {
+                        return Err("panel.json: multi_enum options".into());
+                    }
+                } else if self.options.is_empty() || self.options.len() > MAX_ENUM_OPTIONS {
                     return Err("panel.json: multi_enum options".into());
                 }
                 if self.min.is_some()
@@ -762,6 +796,11 @@ impl PanelColumn {
                     || !self.accept.is_empty()
                 {
                     return Err("panel.json: multi_enum without min/max/accept".into());
+                }
+                if let Some(source) = &self.options_source {
+                    if !is_plugin_platforms_source(source) {
+                        return Err("panel.json: unknown options_source".into());
+                    }
                 }
                 for opt in &self.options {
                     require_plain(opt, "multi_enum option")?;

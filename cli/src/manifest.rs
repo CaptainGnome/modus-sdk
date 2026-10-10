@@ -97,6 +97,12 @@ pub struct Manifest {
     pub depends: Vec<CatalogDepend>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumes: Vec<String>,
+    /// Declared canon bus kinds this plugin may emit (`message`…`moderation`, no `system`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emits: Vec<String>,
+    /// Declared custom bus kinds (must not mask canon names).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emits_custom: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -158,8 +164,37 @@ impl Manifest {
         self.validate_slots()?;
         self.validate_user_theme()?;
         self.validate_catalog()?;
+        self.validate_emits()?;
         self.validate_platform_logo()?;
         self.validate_embed()?;
+        Ok(())
+    }
+
+    fn validate_emits(&self) -> Result<(), String> {
+        let mut seen = HashSet::new();
+        for kind in &self.emits {
+            if kind.trim().is_empty() {
+                return Err("emits: empty kind".into());
+            }
+            if !is_emit_canon_kind(kind) {
+                return Err(format!("emits: unknown kind {kind}"));
+            }
+            if !seen.insert(kind.as_str()) {
+                return Err(format!("emits: duplicate {kind}"));
+            }
+        }
+        let mut seen_custom = HashSet::new();
+        for kind in &self.emits_custom {
+            if kind.trim().is_empty() {
+                return Err("emits_custom: empty kind".into());
+            }
+            if is_canon_kind_name(kind) {
+                return Err(format!("emits_custom: cannot mask canon {kind}"));
+            }
+            if !seen_custom.insert(kind.as_str()) {
+                return Err(format!("emits_custom: duplicate {kind}"));
+            }
+        }
         Ok(())
     }
 
@@ -427,6 +462,26 @@ fn is_plugin_id_label(label: &str) -> bool {
     bytes
         .iter()
         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
+/// Canon kinds guests may declare in `emits` (no Core-only `system`).
+const EMIT_CANON_KINDS: &[&str] = &[
+    "message",
+    "donation",
+    "sub",
+    "follow",
+    "raid",
+    "viewer_count",
+    "reward",
+    "moderation",
+];
+
+fn is_emit_canon_kind(name: &str) -> bool {
+    EMIT_CANON_KINDS.contains(&name)
+}
+
+fn is_canon_kind_name(name: &str) -> bool {
+    is_emit_canon_kind(name) || name == "system"
 }
 
 fn require_nonempty<'a>(value: Option<&'a str>, err: &str) -> Result<&'a str, String> {

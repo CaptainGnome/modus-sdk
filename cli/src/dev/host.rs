@@ -23,10 +23,15 @@ wasmtime::component::bindgen!({
     world: "runtime",
 });
 
+use super::event::{kind_as_str, kind_of};
+
 pub(crate) struct HostData {
     pub(crate) plugin_id: String,
     pub(crate) version: String,
+    pub(crate) name: String,
     pub(crate) platform_id: Option<String>,
+    pub(crate) emits: Vec<String>,
+    pub(crate) emits_custom: Vec<String>,
     pub(crate) plugin_dir: PathBuf,
     pub(crate) has_emit: bool,
     pub(crate) has_auth: bool,
@@ -49,6 +54,7 @@ pub(crate) struct HostData {
     pub(crate) mailbox: Arc<Mailbox>,
     pub(crate) bus: Arc<Bus>,
     pub(crate) history: Arc<HistoryGate>,
+    pub(crate) plugins_storm: Arc<HistoryGate>,
     pub(crate) random: Arc<RandomGate>,
     pub(crate) net: Arc<DevNet>,
     pub(crate) cache: Arc<DevCache>,
@@ -93,6 +99,13 @@ impl modus::abi::clock::Host for HostData {
             thread::sleep(Duration::from_millis(chunk as u64));
             left -= chunk;
         }
+    }
+
+    fn now_ms(&mut self) -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
     }
 }
 
@@ -188,6 +201,16 @@ impl modus::abi::bus_emit::Host for HostData {
         }
         let mapped = map_payload(payload)?;
         let opaque = parse_opaque(opaque)?;
+        let kind = kind_as_str(&kind_of(&mapped));
+        if kind != "custom"
+            && kind != "system"
+            && !self.emits.iter().any(|k| k == kind)
+        {
+            eprintln!(
+                "[Warn] {}: emit {kind} not declared in manifest emits",
+                self.plugin_id
+            );
+        }
         self.bus.emit_from_plugin(
             self.plugin_id.clone(),
             self.platform_id.clone(),
@@ -783,6 +806,23 @@ impl modus::abi::rates::Host for HostData {
             return Ok((amount * scale).floor() / scale);
         }
         Err(format!("missing rate {from}→RUB"))
+    }
+}
+
+impl modus::abi::plugins::Host for HostData {
+    fn list(&mut self) -> Result<Vec<modus::abi::plugins::Entry>, String> {
+        self.running()?;
+        self.plugins_storm
+            .touch(&self.plugin_id)
+            .map_err(|_| "plugins too frequent".to_string())?;
+        Ok(vec![modus::abi::plugins::Entry {
+            plugin_id: self.plugin_id.clone(),
+            name: self.name.clone(),
+            enabled: true,
+            platform_id: self.platform_id.clone(),
+            emits: self.emits.clone(),
+            emits_custom: self.emits_custom.clone(),
+        }])
     }
 }
 
