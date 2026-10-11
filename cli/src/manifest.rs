@@ -17,6 +17,8 @@ pub enum Capability {
     NetHttp,
     #[serde(rename = "net.ws")]
     NetWs,
+    #[serde(rename = "net.grpc")]
+    NetGrpc,
     #[serde(rename = "alert.enqueue")]
     AlertEnqueue,
     #[serde(rename = "storage.kv")]

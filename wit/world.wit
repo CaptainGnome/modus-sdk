@@ -1,4 +1,4 @@
-package modus:abi@2.0.0;
+package modus:abi@2.1.0;
 
 interface types {
   record emote {
@@ -184,6 +184,18 @@ interface wait {
     text: string,
   }
 
+  record grpc-frame {
+    handle: u32,
+    bytes: list<u8>,
+  }
+
+  record grpc-close {
+    handle: u32,
+    /// gRPC status code (0 = OK).
+    status: u32,
+    message: string,
+  }
+
   enum act-kind {
     send,
     delete,
@@ -233,6 +245,8 @@ interface wait {
     /// Presenter rebuilds card for `event-id` then `enqueue(..., replay: true)`. Not a bus emit.
     alert-replay(string),
     tts-rendered(tts-rendered),
+    grpc-msg(grpc-frame),
+    grpc-closed(grpc-close),
   }
 
   subscribe: func();
@@ -274,6 +288,35 @@ interface net-ws {
   connect: func(url: string) -> result<u32, string>;
   send-text: func(handle: u32, message: string) -> result<_, string>;
   close: func(handle: u32) -> result<_, string>;
+}
+
+/// Byte-level gRPC over TLS. Protobuf encode/decode stays in the guest.
+interface net-grpc {
+  record grpc-response {
+    /// gRPC status code (0 = OK).
+    status: u32,
+    message: string,
+    /// Response message bytes; empty if status != 0.
+    body: list<u8>,
+  }
+
+  /// Unary RPC. Blocks like `net-http.fetch`.
+  call: func(
+    authority: string,
+    path: string,
+    headers: list<tuple<string, string>>,
+    request: list<u8>,
+  ) -> result<grpc-response, string>;
+
+  /// Server-streaming RPC. Chunks arrive as `wait.ready.grpc-msg` / `grpc-closed`.
+  open-stream: func(
+    authority: string,
+    path: string,
+    headers: list<tuple<string, string>>,
+    request: list<u8>,
+  ) -> result<u32, string>;
+
+  cancel: func(handle: u32) -> result<_, string>;
 }
 
 interface clock {
@@ -503,6 +546,7 @@ world plugin {
   import auth-token;
   import net-http;
   import net-ws;
+  import net-grpc;
   import alert-enqueue;
   import storage-kv;
   import chat-act;
@@ -533,6 +577,7 @@ world runtime {
   import auth-token;
   import net-http;
   import net-ws;
+  import net-grpc;
   import alert-enqueue;
   import storage-kv;
   import chat-act;

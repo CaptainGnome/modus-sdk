@@ -22,7 +22,9 @@ pub fn wait_backoff(ms: u32) -> bool {
             | Ready::AlertPlay(_)
             | Ready::AlertStop(_)
             | Ready::AlertReplay(_)
-            | Ready::TtsRendered(_) => {}
+            | Ready::TtsRendered(_)
+            | Ready::GrpcMsg(_)
+            | Ready::GrpcClosed(_) => {}
         }
     }
 }

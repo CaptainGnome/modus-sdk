@@ -1,8 +1,10 @@
 mod act;
 mod bus;
 mod event;
+mod grpc;
 mod history;
 mod host;
+mod host_v20;
 mod inject;
 mod kv;
 mod mailbox;
@@ -14,12 +16,14 @@ mod wit_map;
 
 use crate::check::check_plugin_dir;
 use crate::hosts::HostSpec;
+use crate::imports::{detect_abi_package, AbiPackage};
 use crate::manifest::Capability;
 use crate::pack::{compile_component_profile, Profile};
+use crate::wasm::component_imports;
 use act::load_acts;
 use bus::Bus;
 use history::HistoryGate;
-use host::{HostData, Runtime};
+use host::{HostData, Runtime, Runtime20};
 use inject::load_events;
 use kv::DevKv;
 use mailbox::{Mail, Mailbox};
@@ -40,6 +44,34 @@ use wasmtime::{Config, Engine, Store, StoreLimitsBuilder, UpdateDeadline};
 const INIT_EPOCH_TICKS: u64 = 50;
 const RUN_EPOCH_TICKS: u64 = 10_000;
 const STOP_JOIN: Duration = Duration::from_secs(5);
+
+enum BoundPlugin {
+    V20(Runtime20),
+    V21(Runtime),
+}
+
+impl BoundPlugin {
+    fn call_init(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
+        match self {
+            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_init(store),
+            Self::V21(plugin) => plugin.modus_abi_lifecycle().call_init(store),
+        }
+    }
+
+    fn call_run(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
+        match self {
+            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_run(store),
+            Self::V21(plugin) => plugin.modus_abi_lifecycle().call_run(store),
+        }
+    }
+
+    fn call_shutdown(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
+        match self {
+            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_shutdown(store),
+            Self::V21(plugin) => plugin.modus_abi_lifecycle().call_shutdown(store),
+        }
+    }
+}
 
 pub struct DevArgs {
     pub path: Option<PathBuf>,
@@ -89,6 +121,8 @@ pub fn run(args: DevArgs) -> Result<(), String> {
     };
     let component = compile_component_profile(&plugin_dir, Profile::Debug)?;
     let manifest = check_plugin_dir(&plugin_dir, &component)?;
+    let imports = component_imports(&component)?;
+    let abi = detect_abi_package(&imports)?;
     let specs: Result<Vec<_>, _> = manifest.hosts.iter().map(|h| HostSpec::parse(h)).collect();
     let specs = specs?;
     let embed_specs: Result<Vec<_>, _> = manifest
@@ -133,6 +167,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         has_auth: manifest.grants_auth(),
         has_http: manifest.capabilities.contains(&Capability::NetHttp),
         has_ws: manifest.capabilities.contains(&Capability::NetWs),
+        has_grpc: manifest.capabilities.contains(&Capability::NetGrpc),
         has_alert: manifest.capabilities.contains(&Capability::AlertEnqueue),
         has_kv: manifest.capabilities.contains(&Capability::StorageKv),
         has_chat: manifest.capabilities.contains(&Capability::ChatAct),
@@ -169,23 +204,34 @@ pub fn run(args: DevArgs) -> Result<(), String> {
     store.set_epoch_deadline(INIT_EPOCH_TICKS);
 
     let mut linker = Linker::new(&engine);
-    Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
+    host::abi_2_0::Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|err| err.to_string())?;
-    let plugin = Runtime::instantiate(&mut store, &wasm_component, &linker).map_err(|err| {
+    host::abi_2_1::Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
+        .map_err(|err| err.to_string())?;
+    let map_instantiate = |err: wasmtime::Error| -> String {
         let msg = err.to_string();
         if msg.contains("does not have export `run`")
             || msg.contains("matching implementation was not found")
         {
-            "incompatible ABI — rebuild the plugin".into()
+            "incompatible ABI ? rebuild the plugin".into()
         } else {
             format!("cannot instantiate: {msg}")
         }
-    })?;
+    };
+    let plugin = match abi {
+        AbiPackage::V20 => BoundPlugin::V20(
+            Runtime20::instantiate(&mut store, &wasm_component, &linker)
+                .map_err(map_instantiate)?,
+        ),
+        AbiPackage::V21 => BoundPlugin::V21(
+            Runtime::instantiate(&mut store, &wasm_component, &linker)
+                .map_err(map_instantiate)?,
+        ),
+    };
 
     eprintln!("dev {} {}", manifest.id, manifest.version);
     let _ = std::io::Write::flush(&mut std::io::stderr());
     plugin
-        .modus_abi_lifecycle()
         .call_init(&mut store)
         .map_err(|err| format!("init trap: {err}"))?;
     for event in events {
@@ -214,11 +260,11 @@ pub fn run(args: DevArgs) -> Result<(), String> {
     let thread = thread::Builder::new()
         .name(format!("plugin-{plugin_id}"))
         .spawn(move || {
-            let trapped = plugin.modus_abi_lifecycle().call_run(&mut store).is_err();
+            let trapped = plugin.call_run(&mut store).is_err();
             if trapped {
                 eprintln!("run trap {plugin_id}");
             }
-            let _ = plugin.modus_abi_lifecycle().call_shutdown(&mut store);
+            let _ = plugin.call_shutdown(&mut store);
         })
         .map_err(|err| err.to_string())?;
 

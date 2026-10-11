@@ -1,10 +1,87 @@
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use url::Url;
 
 const DNS_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[cfg(test)]
+mod test_hooks {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    type LookupHook = Box<dyn Fn(&str, u16) -> Result<Vec<SocketAddr>, String> + Send + Sync>;
+    type DialHook = Box<dyn Fn(&[SocketAddr]) -> Result<TcpStream, String> + Send + Sync>;
+
+    fn lookup_hook() -> &'static Mutex<Option<LookupHook>> {
+        static HOOK: OnceLock<Mutex<Option<LookupHook>>> = OnceLock::new();
+        HOOK.get_or_init(|| Mutex::new(None))
+    }
+
+    fn dial_hook() -> &'static Mutex<Option<DialHook>> {
+        static HOOK: OnceLock<Mutex<Option<DialHook>>> = OnceLock::new();
+        HOOK.get_or_init(|| Mutex::new(None))
+    }
+
+    fn hook_serial() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct ClearHooks;
+
+    impl Drop for ClearHooks {
+        fn drop(&mut self) {
+            *lookup_hook().lock().unwrap() = None;
+            *dial_hook().lock().unwrap() = None;
+        }
+    }
+
+    pub fn try_lookup(host: &str, port: u16) -> Option<Result<Vec<SocketAddr>, String>> {
+        lookup_hook()
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|hook| hook(host, port)))
+    }
+
+    pub fn try_dial(addrs: &[SocketAddr]) -> Option<Result<TcpStream, String>> {
+        dial_hook()
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|hook| hook(addrs)))
+    }
+
+    pub fn with_net_hooks<R>(
+        lookup: impl Fn(&str, u16) -> Result<Vec<SocketAddr>, String> + Send + Sync + 'static,
+        dial: Option<Box<dyn Fn(&[SocketAddr]) -> Result<TcpStream, String> + Send + Sync>>,
+        f: impl FnOnce() -> R,
+    ) -> R {
+        let _serial = hook_serial().lock().unwrap_or_else(|e| e.into_inner());
+        let _clear = ClearHooks;
+        *lookup_hook().lock().unwrap() = Some(Box::new(lookup));
+        if let Some(dial) = dial {
+            *dial_hook().lock().unwrap() = Some(dial);
+        }
+        f()
+    }
+
+    pub fn with_lookup_hook<R>(
+        hook: impl Fn(&str, u16) -> Result<Vec<SocketAddr>, String> + Send + Sync + 'static,
+        f: impl FnOnce() -> R,
+    ) -> R {
+        with_net_hooks(hook, None, f)
+    }
+
+    #[allow(dead_code)]
+    pub fn with_dns_serial<R>(f: impl FnOnce() -> R) -> R {
+        let _serial = hook_serial().lock().unwrap_or_else(|e| e.into_inner());
+        f()
+    }
+}
+
+#[cfg(test)]
+pub use test_hooks::{with_lookup_hook, with_net_hooks};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostSpec {
@@ -197,22 +274,46 @@ pub fn check_dev_target(
         return Err(format!("host {host} not in manifest"));
     }
     if resolve {
-        let addrs = resolve_addrs(&host, port)?;
-        let mut any = false;
-        for addr in addrs {
-            any = true;
-            if forbidden_ip(addr.ip()) {
-                return Err(format!("forbidden address {}", addr.ip()));
-            }
-        }
-        if !any {
-            return Err(format!("DNS {host}: no addresses"));
-        }
+        let _ = resolve_pinned(&host, port)?;
     }
     Ok((host, port))
 }
 
+/// One `getaddrinfo` + reject if any address is private/loopback/metadata.
+pub fn resolve_pinned(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let addrs = resolve_addrs(host, port)?;
+    if addrs.is_empty() {
+        return Err(format!("DNS {host}: no addresses"));
+    }
+    for addr in &addrs {
+        if forbidden_ip(addr.ip()) {
+            return Err(format!("forbidden address {}", addr.ip()));
+        }
+    }
+    Ok(addrs)
+}
+
+/// TCP connect using a pinned address list. No second DNS.
+pub fn dial_tcp(addrs: &[SocketAddr], timeout: Duration) -> Result<TcpStream, String> {
+    #[cfg(test)]
+    if let Some(result) = test_hooks::try_dial(addrs) {
+        return result;
+    }
+    let mut last = String::from("connect failed");
+    for addr in addrs {
+        match TcpStream::connect_timeout(addr, timeout) {
+            Ok(stream) => return Ok(stream),
+            Err(err) => last = err.to_string(),
+        }
+    }
+    Err(last)
+}
+
 fn resolve_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    #[cfg(test)]
+    if let Some(result) = test_hooks::try_lookup(host, port) {
+        return result;
+    }
     let host_owned = host.to_string();
     let (tx, rx) = mpsc::channel();
     thread::Builder::new()
@@ -275,5 +376,81 @@ mod tests {
             url_without_query("https://api.example/x?foo=1"),
             "https://api.example/x"
         );
+    }
+
+    #[test]
+    fn resolve_pinned_rejects_private_and_mixed() {
+        use std::net::Ipv4Addr;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_c = Arc::clone(&calls);
+        with_lookup_hook(
+            move |_host, port| {
+                calls_c.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![SocketAddr::from((Ipv4Addr::new(10, 0, 0, 1), port))])
+            },
+            || {
+                let err = resolve_pinned("evil.example", 443).unwrap_err();
+                assert!(err.contains("forbidden address"), "{err}");
+            },
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        with_lookup_hook(
+            |_host, port| {
+                Ok(vec![
+                    SocketAddr::from((Ipv4Addr::new(203, 0, 113, 5), port)),
+                    SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), port)),
+                ])
+            },
+            || {
+                let err = resolve_pinned("mixed.example", 443).unwrap_err();
+                assert!(err.contains("forbidden address"), "{err}");
+            },
+        );
+    }
+
+    #[test]
+    fn pinned_connect_one_lookup_never_dials_second_private() {
+        use std::net::{Ipv4Addr, TcpListener};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let loopback_port = listener.local_addr().unwrap().port();
+
+        let lookups = Arc::new(AtomicUsize::new(0));
+        let dialed = Arc::new(Mutex::new(Vec::<SocketAddr>::new()));
+        let lookups_c = Arc::clone(&lookups);
+        let dialed_c = Arc::clone(&dialed);
+
+        with_net_hooks(
+            move |_host, port| {
+                let n = lookups_c.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    Ok(vec![SocketAddr::from((Ipv4Addr::new(203, 0, 113, 5), port))])
+                } else {
+                    Ok(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, loopback_port))])
+                }
+            },
+            Some(Box::new(move |addrs| {
+                dialed_c.lock().unwrap().extend_from_slice(addrs);
+                Err("dial blocked in test".into())
+            })),
+            || {
+                let addrs = resolve_pinned("pin.example", 443).unwrap();
+                assert_eq!(addrs[0].ip(), Ipv4Addr::new(203, 0, 113, 5));
+                let _ = dial_tcp(&addrs, Duration::from_millis(50)).unwrap_err();
+            },
+        );
+
+        assert_eq!(lookups.load(Ordering::SeqCst), 1);
+        let dialed = dialed.lock().unwrap().clone();
+        assert_eq!(dialed.len(), 1);
+        assert_eq!(dialed[0].ip(), Ipv4Addr::new(203, 0, 113, 5));
+        assert!(listener.accept().is_err());
     }
 }

@@ -1,8 +1,8 @@
 [package]
 name = "modus-sdk"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
-description = "Guest SDK for Modus ABI 2 plugins"
+description = "Guest SDK for Modus ABI 2.1 plugins"
 license = "MIT"
 
 [features]

@@ -345,7 +345,7 @@ pub use bindings::modus::abi::net_http;
 pub use bindings::modus::abi::media_cache;
 
 #[cfg(feature = "connector")]
-pub use bindings::modus::abi::{auth_token, net_ws};
+pub use bindings::modus::abi::{auth_token, net_grpc, net_ws};
 
 #[cfg(feature = "provider")]
 pub use bindings::modus::abi::{catalog, media_cache, net_http, net_ws};

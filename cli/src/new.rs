@@ -437,7 +437,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -552,7 +554,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -707,7 +711,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -797,7 +803,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -847,7 +855,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -951,7 +961,9 @@ fn run_session(account_id: &str) -> Outcome {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
         }
     }
 }
@@ -1028,7 +1040,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1079,7 +1093,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1133,7 +1149,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1184,7 +1202,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1310,7 +1330,9 @@ impl Guest for Plugin {
                 | Ready::Ui(_)
                 | Ready::MediaEnded(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1453,7 +1475,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }
@@ -1636,7 +1660,9 @@ impl Guest for Plugin {
                 | Ready::AlertPlay(_)
                 | Ready::AlertStop(_)
                 | Ready::AlertReplay(_)
-                | Ready::TtsRendered(_) => {}
+                | Ready::TtsRendered(_)
+                | Ready::GrpcMsg(_)
+                | Ready::GrpcClosed(_) => {}
             }
         }
     }

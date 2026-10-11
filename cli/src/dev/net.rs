@@ -1,16 +1,169 @@
 use super::mailbox::{Mail, Mailbox};
-use crate::hosts::{check_dev_target, https_url_host, url_without_query, HostSpec};
+use crate::hosts::{
+    check_dev_target, dial_tcp, https_url_host, resolve_pinned, url_without_query, HostSpec,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
-use std::net::{Shutdown, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use tungstenite::stream::MaybeTlsStream;
+use url::Url;
+
+const FORBIDDEN_GUEST_HEADERS: &[&str] = &[
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "upgrade",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+];
+
+/// One hop without auto-follow. Used by production `reqwest` and unit tests.
+pub(crate) struct HopResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+    pub location: Option<String>,
+}
+
+fn guest_header_forbidden(name: &str) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    FORBIDDEN_GUEST_HEADERS.contains(&lower.as_str())
+}
+
+pub(crate) fn reject_guest_headers(headers: &[(String, String)]) -> Result<(), String> {
+    for (k, _) in headers {
+        if guest_header_forbidden(k) {
+            return Err(format!("forbidden header {}", k.trim()));
+        }
+    }
+    Ok(())
+}
+
+fn url_origin(url: &Url) -> Option<(String, String, u16)> {
+    let host = url.host_str()?.to_ascii_lowercase();
+    let port = url.port_or_known_default()?;
+    Some((url.scheme().to_string(), host, port))
+}
+
+fn same_origin(a: &Url, b: &Url) -> bool {
+    match (url_origin(a), url_origin(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+fn is_redirect_status(status: u16) -> bool {
+    matches!(status, 301 | 302 | 303 | 307 | 308)
+}
+
+fn redirect_method_and_body(
+    status: u16,
+    method: reqwest::Method,
+    body: Vec<u8>,
+) -> (reqwest::Method, Vec<u8>) {
+    match status {
+        301 | 302 | 303 if method != reqwest::Method::GET && method != reqwest::Method::HEAD => {
+            (reqwest::Method::GET, Vec::new())
+        }
+        _ => (method, body),
+    }
+}
+
+fn resolve_redirect_url(current: &Url, location: &str) -> Result<Url, String> {
+    current
+        .join(location)
+        .map_err(|err| format!("redirect location: {err}"))
+}
+
+/// Manual redirect walk: check every hop before send; strip guest headers on cross-origin.
+pub(crate) fn fetch_with_redirects(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: &[u8],
+    mut check: impl FnMut(&str) -> Result<(), String>,
+    mut send: impl FnMut(
+        &str,
+        &reqwest::Method,
+        &[(String, String)],
+        &[u8],
+    ) -> Result<HopResponse, String>,
+) -> Result<HttpResponse, String> {
+    reject_guest_headers(headers)?;
+    let mut method: reqwest::Method = method
+        .parse()
+        .map_err(|_| "invalid method".to_string())?;
+    let mut url = Url::parse(url).map_err(|err| format!("url: {err}"))?;
+    let mut headers = headers.to_vec();
+    let mut body = body.to_vec();
+    let mut redirects: usize = 0;
+
+    loop {
+        check(url.as_str())?;
+        let hop = send(url.as_str(), &method, &headers, &body)?;
+        if !is_redirect_status(hop.status) {
+            if hop.body.len() > MAX_BODY {
+                return Err("response too large".into());
+            }
+            return Ok(HttpResponse {
+                status: hop.status,
+                headers: hop.headers,
+                body: hop.body,
+            });
+        }
+        let Some(location) = hop.location.as_deref().filter(|s| !s.is_empty()) else {
+            if hop.body.len() > MAX_BODY {
+                return Err("response too large".into());
+            }
+            return Ok(HttpResponse {
+                status: hop.status,
+                headers: hop.headers,
+                body: hop.body,
+            });
+        };
+        redirects += 1;
+        if redirects > MAX_REDIRECTS {
+            return Err("redirect chain too long".into());
+        }
+        let next = resolve_redirect_url(&url, location)?;
+        if !same_origin(&url, &next) {
+            headers.clear();
+        }
+        let (next_method, next_body) = redirect_method_and_body(hop.status, method, body);
+        method = next_method;
+        body = next_body;
+        url = next;
+    }
+}
+
+struct PinnedResolver;
+
+impl reqwest::dns::Resolve for PinnedResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let addrs = resolve_pinned(&host, 0).map_err(|err| {
+                Box::new(std::io::Error::new(ErrorKind::Other, err))
+                    as Box<dyn std::error::Error + Send + Sync>
+            })?;
+            let iter: Box<dyn Iterator<Item = SocketAddr> + Send> = Box::new(addrs.into_iter());
+            Ok(iter)
+        })
+    }
+}
 
 const MAX_REDIRECTS: usize = 5;
 const MAX_BODY: usize = 4 * 1024 * 1024;
@@ -20,6 +173,7 @@ const WS_READ_POLL: Duration = Duration::from_millis(50);
 const MAX_HTTP: u32 = 4;
 const MAX_WS: u32 = 2;
 
+#[derive(Debug)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -60,6 +214,7 @@ pub struct DevNet {
     inflight_http: AtomicU32,
     next_ws: AtomicU32,
     sockets: Mutex<HashMap<u32, WsSlot>>,
+    grpc: super::grpc::GrpcPluginState,
 }
 
 impl DevNet {
@@ -73,15 +228,8 @@ impl DevNet {
         let client = reqwest::blocking::Client::builder()
             .timeout(HTTP_TIMEOUT)
             .connect_timeout(HTTP_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                if attempt.previous().len() >= MAX_REDIRECTS {
-                    return attempt.error("redirect chain too long");
-                }
-                if https_url_host(attempt.url().as_str()).is_err() {
-                    return attempt.error("redirect is not https");
-                }
-                attempt.follow()
-            }))
+            .dns_resolver(Arc::new(PinnedResolver))
+            .redirect(reqwest::redirect::Policy::none())
             .https_only(true)
             .build()
             .map_err(|err| err.to_string())?;
@@ -95,7 +243,30 @@ impl DevNet {
             inflight_http: AtomicU32::new(0),
             next_ws: AtomicU32::new(1),
             sockets: Mutex::new(HashMap::new()),
+            grpc: super::grpc::GrpcPluginState::new(),
         }))
+    }
+
+    pub fn grpc_open_stream(
+        &self,
+        authority: &str,
+        path: &str,
+        headers: &[(String, String)],
+        request: &[u8],
+    ) -> Result<u32, String> {
+        super::grpc::grpc_open_stream(
+            &self.grpc,
+            &self.specs,
+            authority,
+            path,
+            headers,
+            request,
+            self.mailbox.sender(),
+        )
+    }
+
+    pub fn grpc_cancel(&self, handle: u32) -> Result<(), String> {
+        super::grpc::grpc_cancel(&self.grpc, handle)
     }
 
     pub fn fetch(
@@ -110,13 +281,15 @@ impl DevNet {
         }
         let key = url_without_query(url);
         let fixture = self.http_fixtures.get(&key);
-        check_dev_target(url, &self.specs, fixture.is_none())?;
         let current = self.inflight_http.fetch_add(1, Ordering::SeqCst);
         if current >= MAX_HTTP {
             self.inflight_http.fetch_sub(1, Ordering::SeqCst);
             return Err("http quota".into());
         }
         let result = if let Some(fixture) = fixture {
+            // Offline fixture: policy on the requested URL only, no redirect walk.
+            check_dev_target(url, &self.specs, false)?;
+            reject_guest_headers(headers)?;
             Ok(HttpResponse {
                 status: fixture.status,
                 headers: fixture.headers.clone(),
@@ -136,40 +309,45 @@ impl DevNet {
         headers: &[(String, String)],
         body: &[u8],
     ) -> Result<HttpResponse, String> {
-        let mut req = self.client.request(
-            method
-                .parse::<reqwest::Method>()
-                .map_err(|_| "invalid method".to_string())?,
+        fetch_with_redirects(
+            method,
             url,
-        );
-        for (k, v) in headers {
-            req = req.header(k, v);
-        }
-        if !body.is_empty() {
-            req = req.body(body.to_vec());
-        }
-        let resp = req.send().map_err(|err| err.to_string())?;
-        let final_url = resp.url().clone();
-        check_dev_target(final_url.as_str(), &self.specs, true)?;
-        let status = resp.status().as_u16();
-        let headers = resp
-            .headers()
-            .iter()
-            .filter_map(|(k, v)| Some((k.to_string(), v.to_str().ok()?.to_string())))
-            .collect();
-        let bytes = resp.bytes().map_err(|err| err.to_string())?;
-        if bytes.len() > MAX_BODY {
-            return Err("response too large".into());
-        }
-        Ok(HttpResponse {
-            status,
             headers,
-            body: bytes.to_vec(),
-        })
+            body,
+            |hop_url| check_dev_target(hop_url, &self.specs, false).map(|_| ()),
+            |hop_url, method, headers, body| {
+                let mut req = self.client.request(method.clone(), hop_url);
+                for (k, v) in headers {
+                    req = req.header(k, v);
+                }
+                if !body.is_empty() {
+                    req = req.body(body.to_vec());
+                }
+                let resp = req.send().map_err(|err| err.to_string())?;
+                let status = resp.status().as_u16();
+                let location = resp
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                let headers = resp
+                    .headers()
+                    .iter()
+                    .filter_map(|(k, v)| Some((k.to_string(), v.to_str().ok()?.to_string())))
+                    .collect();
+                let bytes = resp.bytes().map_err(|err| err.to_string())?;
+                Ok(HopResponse {
+                    status,
+                    headers,
+                    body: bytes.to_vec(),
+                    location,
+                })
+            },
+        )
     }
 
     pub fn ws_connect(&self, url: &str) -> Result<u32, String> {
-        check_dev_target(url, &self.specs, self.replay.is_none())?;
+        check_dev_target(url, &self.specs, false)?;
         {
             let sockets = self.sockets.lock().map_err(|err| err.to_string())?;
             if sockets.len() as u32 >= MAX_WS {
@@ -210,13 +388,13 @@ impl DevNet {
     }
 
     fn live_connect(&self, url: &str) -> Result<u32, String> {
-        let (mut socket, _) = tungstenite::connect(url).map_err(|err| err.to_string())?;
+        let mut socket = connect_wss_pinned(url)?;
         match socket.get_mut() {
-            tungstenite::stream::MaybeTlsStream::Plain(stream) => {
+            MaybeTlsStream::Plain(stream) => {
                 let _ = stream.set_read_timeout(Some(WS_READ_POLL));
                 let _ = stream.set_write_timeout(Some(WS_WRITE_TIMEOUT));
             }
-            tungstenite::stream::MaybeTlsStream::NativeTls(stream) => {
+            MaybeTlsStream::NativeTls(stream) => {
                 let tcp = stream.get_mut();
                 let _ = tcp.set_read_timeout(Some(WS_READ_POLL));
                 let _ = tcp.set_write_timeout(Some(WS_WRITE_TIMEOUT));
@@ -280,6 +458,8 @@ impl DevNet {
         for (handle, slot) in sockets.drain() {
             self.drop_slot(handle, slot);
         }
+        drop(sockets);
+        let _ = super::grpc::grpc_close_all(&self.grpc);
     }
 
     fn drop_slot(&self, handle: u32, slot: WsSlot) {
@@ -362,19 +542,31 @@ fn is_ws_timeout(err: &tungstenite::Error) -> bool {
     }
 }
 
-fn tcp_clone(
-    socket: &tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>>,
-) -> Result<TcpStream, String> {
+fn tcp_clone(socket: &tungstenite::WebSocket<MaybeTlsStream<TcpStream>>) -> Result<TcpStream, String> {
     match socket.get_ref() {
-        tungstenite::stream::MaybeTlsStream::Plain(stream) => {
-            stream.try_clone().map_err(|err| err.to_string())
+        MaybeTlsStream::Plain(stream) => stream.try_clone().map_err(|err| err.to_string()),
+        MaybeTlsStream::NativeTls(stream) => {
+            stream.get_ref().try_clone().map_err(|err| err.to_string())
         }
-        tungstenite::stream::MaybeTlsStream::NativeTls(stream) => stream
-            .get_ref()
-            .try_clone()
-            .map_err(|err| err.to_string()),
         _ => Err("no tcp for ws".into()),
     }
+}
+
+fn connect_wss_pinned(
+    url: &str,
+) -> Result<tungstenite::WebSocket<MaybeTlsStream<TcpStream>>, String> {
+    let (host, port) = https_url_host(url)?;
+    let addrs = resolve_pinned(&host, port)?;
+    let stream = dial_tcp(&addrs, HTTP_TIMEOUT)?;
+    let _ = stream.set_nodelay(true);
+    let connector =
+        native_tls::TlsConnector::new().map_err(|err| format!("tls connector: {err}"))?;
+    let tls = connector
+        .connect(&host, stream)
+        .map_err(|err| format!("tls: {err}"))?;
+    let (socket, _) = tungstenite::client(url, MaybeTlsStream::NativeTls(tls))
+        .map_err(|err| err.to_string())?;
+    Ok(socket)
 }
 
 pub fn load_replay(path: &Path) -> Result<Vec<String>, String> {
@@ -444,6 +636,8 @@ pub fn parse_http_fixtures(text: &str) -> Result<HashMap<String, HttpFixture>, S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn parses_json_body_fixture() {
@@ -460,5 +654,171 @@ mod tests {
         assert_eq!(fix.status, 200);
         let body = String::from_utf8_lossy(&fix.body);
         assert!(body.contains("fixture"), "{body}");
+    }
+
+    #[test]
+    fn reject_guest_hop_by_hop_headers() {
+        let err = reject_guest_headers(&[("Host".into(), "evil".into())]).unwrap_err();
+        assert!(err.contains("forbidden header"), "{err}");
+        let err = reject_guest_headers(&[("Content-Length".into(), "1".into())]).unwrap_err();
+        assert!(err.contains("forbidden header"), "{err}");
+        assert!(reject_guest_headers(&[("X-Api-Key".into(), "k".into())]).is_ok());
+    }
+
+    #[test]
+    fn redirect_out_of_manifest_never_sends_second_hop() {
+        let sends = Arc::new(AtomicUsize::new(0));
+        let sends_c = Arc::clone(&sends);
+        let err = fetch_with_redirects(
+            "GET",
+            "https://a.example/start",
+            &[("X-Api-Key".into(), "secret".into())],
+            &[],
+            |url| {
+                if url.contains("evil.example") {
+                    Err("host evil.example not in manifest".into())
+                } else {
+                    Ok(())
+                }
+            },
+            |url, _method, _headers, _body| {
+                sends_c.fetch_add(1, Ordering::SeqCst);
+                assert!(url.contains("a.example"), "{url}");
+                Ok(HopResponse {
+                    status: 302,
+                    headers: vec![],
+                    body: b"nope".to_vec(),
+                    location: Some("https://evil.example/leak".into()),
+                })
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("not in manifest"), "{err}");
+        assert_eq!(sends.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn redirect_private_a_no_tcp_on_second_hop() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let sends = Arc::new(AtomicUsize::new(0));
+        let dialed = Arc::new(Mutex::new(Vec::<SocketAddr>::new()));
+        let sends_c = Arc::clone(&sends);
+        let dialed_c = Arc::clone(&dialed);
+
+        crate::hosts::with_net_hooks(
+            |_host, port| Ok(vec![SocketAddr::from((Ipv4Addr::new(10, 0, 0, 1), port))]),
+            Some(Box::new(move |addrs| {
+                dialed_c.lock().unwrap().extend_from_slice(addrs);
+                Err("dial blocked in test".into())
+            })),
+            || {
+                let err = fetch_with_redirects(
+                    "GET",
+                    "https://a.example/start",
+                    &[],
+                    &[],
+                    |_| Ok(()),
+                    |_url, _method, _headers, _body| {
+                        let n = sends_c.fetch_add(1, Ordering::SeqCst);
+                        if n == 0 {
+                            Ok(HopResponse {
+                                status: 302,
+                                headers: vec![],
+                                body: Vec::new(),
+                                location: Some("https://priv.example/".into()),
+                            })
+                        } else {
+                            let addrs = resolve_pinned("priv.example", 443)?;
+                            let _ = dial_tcp(&addrs, std::time::Duration::from_millis(50))?;
+                            Ok(HopResponse {
+                                status: 200,
+                                headers: vec![],
+                                body: b"ok".to_vec(),
+                                location: None,
+                            })
+                        }
+                    },
+                )
+                .unwrap_err();
+                assert!(err.contains("forbidden address"), "{err}");
+            },
+        );
+
+        assert_eq!(sends.load(Ordering::SeqCst), 2);
+        assert!(dialed.lock().unwrap().is_empty(), "must not dial private A");
+    }
+
+    #[test]
+    fn redirect_strips_guest_headers_on_cross_origin() {
+        let seen = Arc::new(Mutex::new(Vec::<usize>::new()));
+        let seen_c = Arc::clone(&seen);
+        let resp = fetch_with_redirects(
+            "GET",
+            "https://a.example/start",
+            &[
+                ("X-Api-Key".into(), "secret".into()),
+                ("Authorization".into(), "Bearer tok".into()),
+            ],
+            &[],
+            |_| Ok(()),
+            |url, _method, headers, _body| {
+                seen_c.lock().unwrap().push(headers.len());
+                if url.contains("a.example") {
+                    Ok(HopResponse {
+                        status: 302,
+                        headers: vec![],
+                        body: Vec::new(),
+                        location: Some("https://b.example/next".into()),
+                    })
+                } else {
+                    Ok(HopResponse {
+                        status: 200,
+                        headers: vec![],
+                        body: b"ok".to_vec(),
+                        location: None,
+                    })
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(resp.body, b"ok");
+        assert_eq!(*seen.lock().unwrap(), vec![2, 0]);
+    }
+
+    #[test]
+    fn redirect_chain_too_long() {
+        let err = fetch_with_redirects(
+            "GET",
+            "https://a.example/0",
+            &[],
+            &[],
+            |_| Ok(()),
+            |_url, _method, _headers, _body| {
+                Ok(HopResponse {
+                    status: 302,
+                    headers: vec![],
+                    body: b"x".to_vec(),
+                    location: Some("https://a.example/n".into()),
+                })
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("redirect chain too long"), "{err}");
+    }
+
+    #[test]
+    fn grpc_metadata_rejects_pseudo_and_grpc_prefix() {
+        let err = super::super::grpc::validate_guest_metadata(&[(":path".into(), "/x".into())])
+            .unwrap_err();
+        assert!(err.contains("forbidden header"), "{err}");
+        let err = super::super::grpc::validate_guest_metadata(&[("grpc-timeout".into(), "1S".into())])
+            .unwrap_err();
+        assert!(err.contains("forbidden header"), "{err}");
+        assert!(super::super::grpc::validate_guest_metadata(&[(
+            "authorization".into(),
+            "Bearer x".into()
+        )])
+        .is_ok());
     }
 }

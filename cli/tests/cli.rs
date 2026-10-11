@@ -1,4 +1,4 @@
-use std::fs;
+﻿use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -10,7 +10,7 @@ fn modus() -> Command {
 }
 
 /// Dogfood plugins live next to this repo when it is a product submodule (`../../plugins`).
-/// Standalone clone of modus-sdk has no plugins — those tests skip.
+/// Standalone clone of modus-sdk has no plugins вЂ” those tests skip.
 fn product_plugin(name: &str) -> Option<std::path::PathBuf> {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins").join(name);
     dir.join("manifest").is_file().then_some(dir)
@@ -278,7 +278,7 @@ fn new_provider_pack_imports_catalog() {
     assert!(packed.contains("emotes.mplug"), "{packed}");
     let imports = component_imports(&unzip_wasm(&dir.join("dist/emotes.mplug")));
     assert!(
-        imports.iter().any(|imp| imp.contains("catalog@2.0.0")),
+        imports.iter().any(|imp| imp.contains("catalog@2.1.0")),
         "{imports:?}"
     );
 }
@@ -303,7 +303,7 @@ fn new_widget_pack_imports_ui_slot() {
     assert!(packed.contains("hud.mplug"), "{packed}");
     let imports = component_imports(&unzip_wasm(&dir.join("dist/hud.mplug")));
     assert!(
-        imports.iter().any(|imp| imp.contains("ui-slot@2.0.0")),
+        imports.iter().any(|imp| imp.contains("ui-slot@2.1.0")),
         "{imports:?}"
     );
 }
@@ -330,7 +330,7 @@ fn new_panel_native_and_web() {
     assert!(packed.contains("queue.mplug"), "{packed}");
     let imports = component_imports(&unzip_wasm(&native.join("dist/queue.mplug")));
     assert!(
-        imports.iter().any(|imp| imp.contains("ui-slot@2.0.0")),
+        imports.iter().any(|imp| imp.contains("ui-slot@2.1.0")),
         "{imports:?}"
     );
 

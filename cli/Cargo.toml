@@ -17,7 +17,14 @@ serde_json = "1"
 toml = "0.8"
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
+native-tls = "0.2"
 tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
+tonic = { version = "0.12", features = ["transport", "tls", "tls-roots"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http = "1"
+bytes = "1"
+tower = "0.5"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 sha2 = "0.10"
 wasmparser = "0.227"
@@ -31,3 +38,4 @@ modus-sign = { path = "../sign" }
 tempfile = "3"
 wasmparser = "0.227"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+

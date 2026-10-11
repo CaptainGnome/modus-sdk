@@ -1,4 +1,4 @@
-use super::act::{ActJob, ActKind, ActRequest};
+use super::act::ActJob;
 use super::bus::Bus;
 use super::event::parse_opaque;
 use super::history::HistoryGate;
@@ -8,7 +8,7 @@ use super::media::DevCache;
 use super::net::DevNet;
 use super::random::RandomGate;
 use super::settings::DevSettings;
-use super::wit_map::{map_payload, to_wit_event};
+use super::wit_map::{from_wit_act_kind, map_payload, to_wit_act, to_wit_event};
 use crate::hosts::HostSpec;
 use std::path::PathBuf;
 use std::io::{self, Write};
@@ -18,10 +18,22 @@ use std::thread;
 use std::time::Duration;
 use wasmtime::StoreLimits;
 
-wasmtime::component::bindgen!({
-    path: "../wit",
-    world: "runtime",
-});
+pub mod abi_2_1 {
+    wasmtime::component::bindgen!({
+        path: "../wit",
+        world: "runtime",
+    });
+}
+
+pub mod abi_2_0 {
+    wasmtime::component::bindgen!({
+        path: "../wit/frozen/2.0.0",
+        world: "runtime",
+    });
+}
+
+pub use abi_2_0::Runtime as Runtime20;
+pub use abi_2_1::{modus, Runtime};
 
 use super::event::{kind_as_str, kind_of};
 
@@ -37,6 +49,7 @@ pub(crate) struct HostData {
     pub(crate) has_auth: bool,
     pub(crate) has_http: bool,
     pub(crate) has_ws: bool,
+    pub(crate) has_grpc: bool,
     pub(crate) has_alert: bool,
     pub(crate) has_kv: bool,
     pub(crate) has_chat: bool,
@@ -67,11 +80,11 @@ pub(crate) struct HostData {
 }
 
 impl HostData {
-    fn halted(&self) -> bool {
+    pub(crate) fn halted(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
     }
 
-    fn running(&self) -> Result<(), String> {
+    pub(crate) fn running(&self) -> Result<(), String> {
         if self.halted() {
             Err("stopped".into())
         } else {
@@ -179,6 +192,28 @@ impl modus::abi::wait::Host for HostData {
                         request_id,
                         key,
                         error,
+                    })
+                } else {
+                    return self.wait();
+                }
+            }
+            Mail::GrpcMsg { handle, bytes } => {
+                if self.has_grpc {
+                    modus::abi::wait::Ready::GrpcMsg(modus::abi::wait::GrpcFrame { handle, bytes })
+                } else {
+                    return self.wait();
+                }
+            }
+            Mail::GrpcClosed {
+                handle,
+                status,
+                message,
+            } => {
+                if self.has_grpc {
+                    modus::abi::wait::Ready::GrpcClosed(modus::abi::wait::GrpcClose {
+                        handle,
+                        status,
+                        message,
                     })
                 } else {
                     return self.wait();
@@ -328,7 +363,7 @@ impl modus::abi::settings::Host for HostData {
     }
 }
 
-fn validate_dev_asset_path(rel: &str) -> Result<(), String> {
+pub(crate) fn validate_dev_asset_path(rel: &str) -> Result<(), String> {
     if rel.is_empty()
         || rel.contains("..")
         || rel.contains('\\')
@@ -521,6 +556,49 @@ impl modus::abi::net_ws::Host for HostData {
             return Err("no grant net.ws".into());
         }
         self.net.ws_close(handle)
+    }
+}
+
+impl modus::abi::net_grpc::Host for HostData {
+    fn call(
+        &mut self,
+        authority: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        request: Vec<u8>,
+    ) -> Result<modus::abi::net_grpc::GrpcResponse, String> {
+        self.running()?;
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        let resp = super::grpc::grpc_call(&self.specs, &authority, &path, &headers, &request)?;
+        Ok(modus::abi::net_grpc::GrpcResponse {
+            status: resp.status,
+            message: resp.message,
+            body: resp.body,
+        })
+    }
+
+    fn open_stream(
+        &mut self,
+        authority: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        request: Vec<u8>,
+    ) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        self.net
+            .grpc_open_stream(&authority, &path, &headers, &request)
+    }
+
+    fn cancel(&mut self, handle: u32) -> Result<(), String> {
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        self.net.grpc_cancel(handle)
     }
 }
 
@@ -839,39 +917,5 @@ impl modus::abi::ui_slot::Host for HostData {
             payload.len()
         );
         Ok(())
-    }
-}
-
-fn to_wit_act(req: ActRequest) -> modus::abi::wait::ActRequest {
-    modus::abi::wait::ActRequest {
-        id: req.id,
-        account_id: req.account_id,
-        platform: req.platform,
-        channel: req.channel,
-        kind: to_wit_act_kind(req.kind),
-        text: req.text,
-        message_id: req.message_id,
-        target_user_id: req.target_user_id,
-        duration_sec: req.duration_sec,
-    }
-}
-
-fn to_wit_act_kind(kind: ActKind) -> modus::abi::wait::ActKind {
-    match kind {
-        ActKind::Send => modus::abi::wait::ActKind::Send,
-        ActKind::Delete => modus::abi::wait::ActKind::Delete,
-        ActKind::Timeout => modus::abi::wait::ActKind::Timeout,
-        ActKind::Ban => modus::abi::wait::ActKind::Ban,
-        ActKind::Unban => modus::abi::wait::ActKind::Unban,
-    }
-}
-
-fn from_wit_act_kind(kind: modus::abi::wait::ActKind) -> ActKind {
-    match kind {
-        modus::abi::wait::ActKind::Send => ActKind::Send,
-        modus::abi::wait::ActKind::Delete => ActKind::Delete,
-        modus::abi::wait::ActKind::Timeout => ActKind::Timeout,
-        modus::abi::wait::ActKind::Ban => ActKind::Ban,
-        modus::abi::wait::ActKind::Unban => ActKind::Unban,
     }
 }

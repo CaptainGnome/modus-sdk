@@ -23,6 +23,12 @@ pub enum Mail {
         key: Option<String>,
         error: Option<String>,
     },
+    GrpcMsg { handle: u32, bytes: Vec<u8> },
+    GrpcClosed {
+        handle: u32,
+        status: u32,
+        message: String,
+    },
 }
 
 pub struct Mailbox {

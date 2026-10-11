@@ -1,0 +1,756 @@
+//! modus:abi@2.0.0 Host impls (frozen; no net-grpc). Same HostData as 2.1.
+use super::act::ActJob;
+use super::event::{kind_as_str, kind_of, parse_opaque};
+use super::host::abi_2_0::modus;
+use super::host::{validate_dev_asset_path, HostData};
+use super::mailbox::Mail;
+use super::wit_map::v20::{from_wit_act_kind, map_payload, to_wit_act, to_wit_event};
+use std::io::{self, Write};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+
+impl modus::abi::types::Host for HostData {}
+
+impl modus::abi::random::Host for HostData {
+    fn fill(&mut self, len: u32) -> Result<Vec<u8>, String> {
+        self.random.fill(&self.plugin_id, len)
+    }
+}
+
+impl modus::abi::clock::Host for HostData {
+    fn sleep_ms(&mut self, ms: u32) {
+        let mut left = ms;
+        while left > 0 {
+            if self.halted() {
+                return;
+            }
+            let chunk = left.min(50);
+            thread::sleep(Duration::from_millis(chunk as u64));
+            left -= chunk;
+        }
+    }
+
+    fn now_ms(&mut self) -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+}
+
+impl modus::abi::self_info::Host for HostData {
+    fn plugin_id(&mut self) -> String {
+        self.plugin_id.clone()
+    }
+
+    fn version(&mut self) -> String {
+        self.version.clone()
+    }
+}
+
+impl modus::abi::log::Host for HostData {
+    fn log(&mut self, level: modus::abi::log::Level, message: String) {
+        eprintln!("[{level:?}] {}: {message}", self.plugin_id);
+        let _ = io::stderr().flush();
+    }
+}
+
+impl modus::abi::wait::Host for HostData {
+    fn subscribe(&mut self) {
+        if self.halted() {
+            return;
+        }
+        self.bus.subscribe();
+    }
+
+    fn set_timer(&mut self, ms: u32) {
+        if self.halted() {
+            return;
+        }
+        self.mailbox.set_timer(ms);
+    }
+
+    fn wait(&mut self) -> modus::abi::wait::Ready {
+        if self.halted() {
+            return modus::abi::wait::Ready::Stop;
+        }
+        match self.mailbox.wait(&self.stop) {
+            Mail::Stop => modus::abi::wait::Ready::Stop,
+            Mail::Timer => modus::abi::wait::Ready::Timer,
+            Mail::WsText { handle, text } => {
+                modus::abi::wait::Ready::WsText(modus::abi::wait::WsFrame { handle, text })
+            }
+            Mail::WsClosed(handle) => {
+                if self.halted() {
+                    modus::abi::wait::Ready::Stop
+                } else {
+                    modus::abi::wait::Ready::WsClosed(handle)
+                }
+            }
+            Mail::Bus(event) => modus::abi::wait::Ready::Bus(to_wit_event(event)),
+            Mail::Ui(payload) => modus::abi::wait::Ready::Ui(payload),
+            Mail::Settings => modus::abi::wait::Ready::Settings,
+            Mail::Act(req) => modus::abi::wait::Ready::Act(to_wit_act(req)),
+            Mail::MediaEnded(id) => {
+                if self.has_audio {
+                    modus::abi::wait::Ready::MediaEnded(id)
+                } else {
+                    return self.wait();
+                }
+            }
+            Mail::TtsRendered {
+                request_id,
+                key,
+                error,
+            } => {
+                if self.has_audio {
+                    modus::abi::wait::Ready::TtsRendered(modus::abi::wait::TtsRendered {
+                        request_id,
+                        key,
+                        error,
+                    })
+                } else {
+                    return self.wait();
+                }
+            }
+            Mail::GrpcMsg { .. } | Mail::GrpcClosed { .. } => return self.wait(),
+        }
+    }
+}
+
+impl modus::abi::bus_emit::Host for HostData {
+    fn emit(
+        &mut self,
+        channel: String,
+        payload: modus::abi::types::Payload,
+        opaque: Option<String>,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_emit {
+            return Err("no grant bus.emit".into());
+        }
+        let mapped = map_payload(payload)?;
+        let opaque = parse_opaque(opaque)?;
+        let kind = kind_as_str(&kind_of(&mapped));
+        if kind != "custom"
+            && kind != "system"
+            && !self.emits.iter().any(|k| k == kind)
+        {
+            eprintln!(
+                "[Warn] {}: emit {kind} not declared in manifest emits",
+                self.plugin_id
+            );
+        }
+        self.bus.emit_from_plugin(
+            self.plugin_id.clone(),
+            self.platform_id.clone(),
+            channel,
+            mapped,
+            opaque,
+        )
+    }
+}
+
+impl modus::abi::alert_enqueue::Host for HostData {
+    fn enqueue(&mut self, job: modus::abi::alert_enqueue::Job) -> Result<String, String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = writeln!(
+            io::stderr(),
+            "alert enqueue {id} {:?} event={} lane={} exclusive={} replay={} pending_audio={} pending_ttl_ms={} duration={} title={}",
+            job.priority,
+            job.event_id,
+            job.lane,
+            job.exclusive,
+            job.replay,
+            job.pending_audio,
+            job.pending_ttl_ms,
+            job.duration_ms,
+            job.title
+        );
+        Ok(id)
+    }
+
+    fn attach(&mut self, job: modus::abi::alert_enqueue::AttachJob) -> Result<String, String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = writeln!(
+            io::stderr(),
+            "alert attach {id} parent={:?} event={:?} tag={} title={}",
+            job.parent_job_id,
+            job.event_id,
+            job.tag,
+            job.title
+        );
+        Ok(id)
+    }
+
+    fn mark_ready(
+        &mut self,
+        event_id: String,
+        audio_key: Option<String>,
+        duration_ms: Option<u32>,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        let _ = writeln!(
+            io::stderr(),
+            "alert mark-ready event={} key={:?} duration={:?}",
+            event_id,
+            audio_key,
+            duration_ms
+        );
+        Ok(())
+    }
+
+    fn complete(
+        &mut self,
+        job_id: String,
+        outcome: Result<(), String>,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_alert {
+            return Err("no grant alert.enqueue".into());
+        }
+        match outcome {
+            Ok(()) => {
+                let _ = writeln!(io::stderr(), "alert complete {job_id} ok");
+            }
+            Err(err) => {
+                let _ = writeln!(io::stderr(), "alert complete {job_id} err {err}");
+            }
+        }
+        Ok(())
+    }
+}
+
+impl modus::abi::settings::Host for HostData {
+    fn get(&mut self, key: String) -> Option<String> {
+        self.settings.get(&key)
+    }
+
+    fn set_label(&mut self, key: String, text: String) -> Result<(), String> {
+        self.running()?;
+        self.settings.set_label(&key, &text)?;
+        let _ = writeln!(io::stderr(), "settings set-label {key}");
+        Ok(())
+    }
+
+    fn set_label_i18n(
+        &mut self,
+        key: String,
+        label_key: String,
+        params: Option<String>,
+    ) -> Result<(), String> {
+        self.running()?;
+        self.settings
+            .set_label_i18n(&key, &label_key, params)?;
+        let _ = writeln!(io::stderr(), "settings set-label-i18n {key}");
+        Ok(())
+    }
+}
+
+impl modus::abi::assets::Host for HostData {
+    fn read(&mut self, path: String) -> Result<Vec<u8>, String> {
+        validate_dev_asset_path(&path)?;
+        let file_path = self.plugin_dir.join("assets").join(&path);
+        let bytes = std::fs::read(&file_path)
+            .map_err(|_| format!("missing assets/{path}"))?;
+        if bytes.len() > 512 * 1024 {
+            return Err("assets file too large".into());
+        }
+        Ok(bytes)
+    }
+}
+
+impl modus::abi::history_read::Host for HostData {
+    fn read(
+        &mut self,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> Result<modus::abi::history_read::Page, String> {
+        self.running()?;
+        if !self.has_history {
+            return Err("no grant history.read".into());
+        }
+        self.history.touch(&self.plugin_id)?;
+        let (events, next) = self.bus.history_page(cursor.as_deref(), limit)?;
+        Ok(modus::abi::history_read::Page {
+            events: events.into_iter().map(to_wit_event).collect(),
+            next,
+            alert_shown: Vec::new(),
+        })
+    }
+}
+
+impl modus::abi::storage_kv::Host for HostData {
+    fn get(&mut self, key: String) -> Result<Option<String>, String> {
+        self.running()?;
+        if !self.has_kv {
+            return Err("no grant storage.kv".into());
+        }
+        self.kv.get(&key)
+    }
+
+    fn set(&mut self, key: String, value: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_kv {
+            return Err("no grant storage.kv".into());
+        }
+        self.kv.set(&key, &value)
+    }
+
+    fn delete(&mut self, key: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_kv {
+            return Err("no grant storage.kv".into());
+        }
+        self.kv.delete(&key)
+    }
+
+    fn list_keys(&mut self, prefix: String) -> Result<Vec<String>, String> {
+        self.running()?;
+        if !self.has_kv {
+            return Err("no grant storage.kv".into());
+        }
+        self.kv.list_keys(&prefix)
+    }
+}
+
+impl modus::abi::chat_act::Host for HostData {
+    fn act(&mut self, job: modus::abi::chat_act::ActJob) -> Result<String, String> {
+        self.running()?;
+        if !self.has_chat {
+            return Err("no grant chat.act".into());
+        }
+        let mut job = ActJob {
+            platform: job.platform,
+            channel: job.channel,
+            kind: from_wit_act_kind(job.kind),
+            text: job.text,
+            message_id: job.message_id,
+            target_user_id: job.target_user_id,
+            duration_sec: job.duration_sec,
+        };
+        job.validate()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = writeln!(
+            io::stderr(),
+            "chat.act {id} {} {}/{} {}",
+            job.kind_label(),
+            job.platform,
+            job.channel,
+            job.text.as_deref().unwrap_or("")
+        );
+        Ok(id)
+    }
+}
+
+impl modus::abi::chat_complete::Host for HostData {
+    fn complete(&mut self, id: String, outcome: Result<(), String>) {
+        match outcome {
+            Ok(()) => {
+                let _ = writeln!(io::stderr(), "chat.complete {id} ok");
+            }
+            Err(err) => {
+                let _ = writeln!(io::stderr(), "chat.complete {id} err {err}");
+            }
+        }
+    }
+}
+
+impl modus::abi::auth_token::Host for HostData {
+    fn list_accounts(&mut self) -> Vec<String> {
+        if self.halted() || !self.has_auth || self.access_token.is_none() {
+            return Vec::new();
+        }
+        vec![self.auth_account.clone()]
+    }
+
+    fn token(&mut self, account_id: String) -> Result<String, String> {
+        self.running()?;
+        if !self.has_auth {
+            return Err("no grant auth.token".into());
+        }
+        let Some(token) = &self.access_token else {
+            return Err("foreign account".into());
+        };
+        if account_id != self.auth_account {
+            return Err("foreign account".into());
+        }
+        Ok(token.clone())
+    }
+}
+
+impl modus::abi::net_http::Host for HostData {
+    fn fetch(
+        &mut self,
+        method: String,
+        url: String,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) -> Result<modus::abi::net_http::HttpResponse, String> {
+        self.running()?;
+        if !self.has_http {
+            return Err("no grant net.http".into());
+        }
+        let resp = self.net.fetch(&method, &url, &headers, &body)?;
+        Ok(modus::abi::net_http::HttpResponse {
+            status: resp.status,
+            headers: resp.headers,
+            body: resp.body,
+        })
+    }
+}
+
+impl modus::abi::net_ws::Host for HostData {
+    fn connect(&mut self, url: String) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_ws {
+            return Err("no grant net.ws".into());
+        }
+        self.net.ws_connect(&url)
+    }
+
+    fn send_text(&mut self, handle: u32, message: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_ws {
+            return Err("no grant net.ws".into());
+        }
+        self.net.ws_send(handle, &message)
+    }
+
+    fn close(&mut self, handle: u32) -> Result<(), String> {
+        if !self.has_ws {
+            return Err("no grant net.ws".into());
+        }
+        self.net.ws_close(handle)
+    }
+}
+
+impl modus::abi::media_cache::Host for HostData {
+    fn lookup(&mut self, url: String) -> Option<String> {
+        if self.halted() || !self.has_cache {
+            return None;
+        }
+        self.cache.lookup(&self.specs, &url)
+    }
+
+    fn ensure(&mut self, url: String) -> Result<String, String> {
+        self.running()?;
+        if !self.has_cache {
+            return Err("no grant media.cache".into());
+        }
+        self.cache
+            .ensure(&self.net, &self.specs, self.has_http, &url)
+    }
+
+    fn put(&mut self, mime: String, bytes: Vec<u8>) -> Result<String, String> {
+        self.running()?;
+        if !self.has_cache {
+            return Err("no grant media.cache".into());
+        }
+        self.cache.put(&self.plugin_id, &mime, &bytes)
+    }
+
+    fn release(&mut self, key: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_cache {
+            return Err("no grant media.cache".into());
+        }
+        self.cache.release(&key)
+    }
+}
+
+impl modus::abi::media_audio::Host for HostData {
+    fn play(&mut self, spec: modus::abi::media_audio::Spec) -> Result<String, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let label = match &spec {
+            modus::abi::media_audio::Spec::Asset(path) => format!("asset:{path}"),
+            modus::abi::media_audio::Spec::Url(url) => format!("url:{url}"),
+            modus::abi::media_audio::Spec::Tts(text) => {
+                format!("tts:{}", text.chars().take(40).collect::<String>())
+            }
+            modus::abi::media_audio::Spec::TtsEx(tts) => {
+                format!(
+                    "tts-ex:{} voice={}",
+                    tts.text.chars().take(40).collect::<String>(),
+                    tts.voice.as_deref().unwrap_or("-")
+                )
+            }
+        };
+        let _ = writeln!(io::stderr(), "media.audio play {id} {label}");
+        let mailbox = Arc::clone(&self.mailbox);
+        let ended = id.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            mailbox.wake_media_ended(ended);
+        });
+        Ok(id)
+    }
+
+    fn stop(&mut self, id: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        let _ = writeln!(io::stderr(), "media.audio stop {id}");
+        self.mailbox.wake_media_ended(id);
+        Ok(())
+    }
+
+    fn duration_ms(&mut self, spec: modus::abi::media_audio::Spec) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        match spec {
+            modus::abi::media_audio::Spec::Tts(_) | modus::abi::media_audio::Spec::TtsEx(_) => {
+                Err("tts duration unknown".into())
+            }
+            modus::abi::media_audio::Spec::Url(url) => {
+                let key = url
+                    .strip_prefix("modus-cache://")
+                    .unwrap_or(url.as_str())
+                    .trim();
+                if key.len() == 64 && key.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+                    let Some((_, bytes)) = self.cache.blob(key) else {
+                        return Err("not in cache".into());
+                    };
+                    let ms = (bytes.len() as u64)
+                        .saturating_mul(8)
+                        .saturating_mul(1000)
+                        / 128_000;
+                    return Ok(ms.clamp(50, 120_000) as u32);
+                }
+                Ok(1_000)
+            }
+            modus::abi::media_audio::Spec::Asset(_) => Ok(1_000),
+        }
+    }
+
+    fn list_voices(&mut self) -> Result<Vec<modus::abi::media_audio::Voice>, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        Ok(vec![modus::abi::media_audio::Voice {
+            id: "dev-voice".into(),
+            name: "Dev Voice".into(),
+            culture: "en-US".into(),
+        }])
+    }
+
+    fn render_tts(&mut self, tts: modus::abi::media_audio::Tts) -> Result<String, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        // Stable 64-hex stub key (not a real blob).
+        let key = format!("{:0>64}", format!("{:x}", tts.text.len().max(1)));
+        let _ = writeln!(
+            io::stderr(),
+            "media.audio render-tts key={} text={} voice={}",
+            &key[..16.min(key.len())],
+            tts.text.chars().take(40).collect::<String>(),
+            tts.voice.as_deref().unwrap_or("-")
+        );
+        Ok(key)
+    }
+
+    fn start_render_tts(&mut self, tts: modus::abi::media_audio::Tts) -> Result<String, String> {
+        self.running()?;
+        if !self.has_audio {
+            return Err("no grant media.audio".into());
+        }
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let key = format!("{:0>64}", format!("{:x}", tts.text.len().max(1)));
+        let mailbox = Arc::clone(&self.mailbox);
+        let req = request_id.clone();
+        let _ = writeln!(
+            io::stderr(),
+            "media.audio start-render-tts id={} text={}",
+            &req[..8.min(req.len())],
+            tts.text.chars().take(40).collect::<String>()
+        );
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            mailbox.wake_tts_rendered(req, Some(key), None);
+        });
+        Ok(request_id)
+    }
+}
+
+impl modus::abi::net_bridge::Host for HostData {
+    fn connect(&mut self, url: String) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_bridge {
+            return Err("no grant net.bridge".into());
+        }
+        if !url.starts_with("ws://127.0.0.1")
+            && !url.starts_with("ws://localhost")
+            && !url.starts_with("ws://[::1]")
+        {
+            return Err("ws only".into());
+        }
+        let _ = writeln!(io::stderr(), "net.bridge connect {url}");
+        Err("no connection".into())
+    }
+
+    fn send_text(&mut self, handle: u32, message: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_bridge {
+            return Err("no grant net.bridge".into());
+        }
+        let _ = writeln!(
+            io::stderr(),
+            "net.bridge send {handle} ({} bytes)",
+            message.len()
+        );
+        Err("no socket".into())
+    }
+
+    fn close(&mut self, handle: u32) -> Result<(), String> {
+        if !self.has_bridge {
+            return Err("no grant net.bridge".into());
+        }
+        let _ = writeln!(io::stderr(), "net.bridge close {handle}");
+        Ok(())
+    }
+}
+
+impl modus::abi::media_embed::Host for HostData {
+    fn hosts(&mut self) -> Vec<String> {
+        if !self.has_embed {
+            return Vec::new();
+        }
+        self.embed_specs.iter().map(|s| s.canonical()).collect()
+    }
+
+    fn allowed(&mut self, url: String) -> bool {
+        if !self.has_embed {
+            return false;
+        }
+        let Ok((host, port)) = crate::hosts::https_url_host(&url) else {
+            return false;
+        };
+        if crate::hosts::is_blocked_name(&host) {
+            return false;
+        }
+        crate::hosts::allowed_by_manifest(&host, port, &self.embed_specs)
+    }
+}
+
+impl modus::abi::catalog::Host for HostData {
+    fn publish(&mut self, name: String, payload: Vec<u8>) -> Result<(), String> {
+        self.running()?;
+        if !self.has_catalog {
+            return Err("no grant catalog.publish".into());
+        }
+        let text = String::from_utf8_lossy(&payload);
+        let _ = writeln!(
+            io::stderr(),
+            "catalog publish {name} ({} bytes)\n{text}",
+            payload.len()
+        );
+        Ok(())
+    }
+
+    fn unpublish(&mut self, name: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_catalog {
+            return Err("no grant catalog.publish".into());
+        }
+        let _ = writeln!(io::stderr(), "catalog unpublish {name}");
+        Ok(())
+    }
+}
+
+impl modus::abi::rates_publish::Host for HostData {
+    fn publish(
+        &mut self,
+        rates: Vec<modus::abi::rates_publish::Rate>,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_rates {
+            return Err("no grant rates.publish".into());
+        }
+        let _ = writeln!(io::stderr(), "rates publish {} pairs", rates.len());
+        for rate in &rates {
+            let _ = writeln!(
+                io::stderr(),
+                "  {}→{} = {}",
+                rate.from, rate.to, rate.value
+            );
+        }
+        Ok(())
+    }
+}
+
+impl modus::abi::rates::Host for HostData {
+    fn base(&mut self) -> String {
+        if self.halted() || !self.has_rates_convert {
+            return String::new();
+        }
+        "RUB".into()
+    }
+
+    fn convert_to_base(&mut self, amount: f64, from: String) -> Result<f64, String> {
+        self.running()?;
+        if !self.has_rates_convert {
+            return Err("no grant rates.convert".into());
+        }
+        let from = from.trim().to_ascii_uppercase();
+        if from == "RUB" {
+            let scale = 100f64;
+            return Ok((amount * scale).floor() / scale);
+        }
+        Err(format!("missing rate {from}→RUB"))
+    }
+}
+
+impl modus::abi::plugins::Host for HostData {
+    fn list(&mut self) -> Result<Vec<modus::abi::plugins::Entry>, String> {
+        self.running()?;
+        self.plugins_storm
+            .touch(&self.plugin_id)
+            .map_err(|_| "plugins too frequent".to_string())?;
+        Ok(vec![modus::abi::plugins::Entry {
+            plugin_id: self.plugin_id.clone(),
+            name: self.name.clone(),
+            enabled: true,
+            platform_id: self.platform_id.clone(),
+            emits: self.emits.clone(),
+            emits_custom: self.emits_custom.clone(),
+        }])
+    }
+}
+
+impl modus::abi::ui_slot::Host for HostData {
+    fn post(&mut self, payload: Vec<u8>) -> Result<(), String> {
+        self.running()?;
+        if !self.has_ui {
+            return Err("no ui slot".into());
+        }
+        let text = String::from_utf8_lossy(&payload);
+        let _ = writeln!(
+            io::stderr(),
+            "ui-slot post ({} bytes)\n{text}",
+            payload.len()
+        );
+        Ok(())
+    }
+}
