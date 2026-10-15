@@ -1,8 +1,8 @@
 use crate::manifest::Capability;
 use std::collections::HashSet;
 
-const V20: &str = "2.0.0";
 const V21: &str = "2.1.0";
+const V22: &str = "2.2.0";
 const MODUS_PREFIX: &str = "modus:abi/";
 
 /// Interface names (without package prefix / version) every plugin may import.
@@ -18,12 +18,13 @@ const BASE_NAMES: &[&str] = &[
     "plugins",
 ];
 
-/// Optional interfaces present in both 2.0.0 and 2.1.0.
+/// Optional interfaces present in both 2.1.0 and 2.2.0.
 const KNOWN_NAMES: &[&str] = &[
     "bus-emit",
     "auth-token",
     "net-http",
     "net-ws",
+    "net-grpc",
     "alert-enqueue",
     "storage-kv",
     "chat-act",
@@ -39,25 +40,22 @@ const KNOWN_NAMES: &[&str] = &[
     "rates",
 ];
 
-/// Added in 2.1.0 only.
-const KNOWN_NAMES_21_ONLY: &[&str] = &["net-grpc"];
+/// Optional interfaces only in `@2.2.0` (not in frozen 2.1).
+const V22_ONLY_NAMES: &[&str] = &["chat-mangle"];
 
-#[allow(dead_code)]
-pub const MEDIA_EMBED_IMPORT: &str = "modus:abi/media-embed@2.1.0";
-#[allow(dead_code)]
-pub const MEDIA_EMBED_IMPORT_V20: &str = "modus:abi/media-embed@2.0.0";
+pub const MEDIA_EMBED_IMPORT: &str = "modus:abi/media-embed@2.2.0";
+pub const MEDIA_EMBED_IMPORT_V21: &str = "modus:abi/media-embed@2.1.0";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AbiPackage {
-    V20,
     V21,
+    V22,
 }
 
-#[allow(dead_code)]
 pub fn imports_media_embed(imports: &[String]) -> bool {
     imports
         .iter()
-        .any(|import| import == MEDIA_EMBED_IMPORT || import == MEDIA_EMBED_IMPORT_V20)
+        .any(|import| import == MEDIA_EMBED_IMPORT || import == MEDIA_EMBED_IMPORT_V21)
 }
 
 /// Split `modus:abi/<name>@<version>` into `(name, version)`.
@@ -69,40 +67,41 @@ fn split_modus(import: &str) -> Option<(&str, &str)> {
 /// Which `modus:abi` package version the component targets.
 pub fn detect_abi_package(imports: &[String]) -> Result<AbiPackage, String> {
     let mut has_modus = false;
-    let mut has20 = false;
     let mut has21 = false;
+    let mut has22 = false;
     for import in imports {
         if !import.starts_with(MODUS_PREFIX) {
             continue;
         }
         has_modus = true;
         match split_modus(import).map(|(_, version)| version) {
-            Some(V20) => has20 = true,
             Some(V21) => has21 = true,
+            Some(V22) => has22 = true,
             _ => {}
         }
     }
     if !has_modus {
         return Err("no modus:abi imports".into());
     }
-    match (has20, has21) {
+    match (has21, has22) {
         (true, true) => Err("mixed ABI package versions".into()),
-        (true, false) => Ok(AbiPackage::V20),
-        (false, true) => Ok(AbiPackage::V21),
+        (true, false) => Ok(AbiPackage::V21),
+        (false, true) => Ok(AbiPackage::V22),
         (false, false) => Err("unsupported modus:abi version".into()),
     }
 }
 
 fn is_allowed(name: &str, version: &str) -> bool {
-    if BASE_NAMES.contains(&name) || KNOWN_NAMES.contains(&name) {
-        return version == V20 || version == V21;
+    if version == V22 && V22_ONLY_NAMES.contains(&name) {
+        return true;
     }
-    KNOWN_NAMES_21_ONLY.contains(&name) && version == V21
+    (BASE_NAMES.contains(&name) || KNOWN_NAMES.contains(&name))
+        && (version == V21 || version == V22)
 }
 
 /// Soft-link: known modus imports ok without grant. Rights enforced on call.
-/// Accepts both `@2.0.0` (no net-grpc) and `@2.1.0` sets; mixing is checked by
-/// `detect_abi_package`.
+/// Accepts both `@2.1.0` and `@2.2.0` sets; mixing is checked by
+/// `detect_abi_package`. `@2.0.0` is rejected.
 /// `granted` / `has_ui_surface` kept for call-site signature parity with Core.
 pub fn validate_imports(
     imports: &[String],
@@ -149,7 +148,7 @@ mod tests {
 
     #[test]
     fn base_imports_ok() {
-        for version in [V20, V21] {
+        for version in [V21, V22] {
             ok(&versioned(BASE_NAMES, version), &HashSet::new());
         }
     }
@@ -162,25 +161,23 @@ mod tests {
 
     #[test]
     fn known_imports_ok_without_grant() {
-        for version in [V20, V21] {
+        for version in [V21, V22] {
             for imp in versioned(KNOWN_NAMES, version) {
                 ok(&[imp], &HashSet::new());
             }
         }
-        for imp in versioned(KNOWN_NAMES_21_ONLY, V21) {
-            ok(&[imp], &HashSet::new());
-        }
     }
 
     #[test]
-    fn net_grpc_rejected_on_v20() {
-        let imports = vec!["modus:abi/net-grpc@2.0.0".into()];
+    fn v20_rejected() {
+        let imports = vec!["modus:abi/log@2.0.0".into()];
         err(&imports, &HashSet::new());
+        assert!(detect_abi_package(&imports).is_err());
     }
 
     #[test]
     fn ui_slot_ok_without_grant_or_surface() {
-        let imports = vec!["modus:abi/ui-slot@2.1.0".into()];
+        let imports = vec!["modus:abi/ui-slot@2.2.0".into()];
         assert!(validate_imports(&imports, &HashSet::new(), false).is_ok());
         assert!(validate_imports(&imports, &HashSet::new(), true).is_ok());
     }
@@ -195,29 +192,28 @@ mod tests {
 
     #[test]
     fn media_embed_either_version() {
-        assert!(imports_media_embed(&["modus:abi/media-embed@2.0.0".into()]));
         assert!(imports_media_embed(&["modus:abi/media-embed@2.1.0".into()]));
-        assert!(!imports_media_embed(&["modus:abi/log@2.1.0".into()]));
-    }
-
-    #[test]
-    fn detect_v20_ok() {
-        let imports = versioned(BASE_NAMES, V20);
-        assert_eq!(detect_abi_package(&imports), Ok(AbiPackage::V20));
+        assert!(imports_media_embed(&["modus:abi/media-embed@2.2.0".into()]));
+        assert!(!imports_media_embed(&["modus:abi/log@2.2.0".into()]));
     }
 
     #[test]
     fn detect_v21_ok() {
-        let mut imports = versioned(BASE_NAMES, V21);
-        imports.extend(versioned(KNOWN_NAMES_21_ONLY, V21));
+        let imports = versioned(BASE_NAMES, V21);
         assert_eq!(detect_abi_package(&imports), Ok(AbiPackage::V21));
+    }
+
+    #[test]
+    fn detect_v22_ok() {
+        let imports = versioned(BASE_NAMES, V22);
+        assert_eq!(detect_abi_package(&imports), Ok(AbiPackage::V22));
     }
 
     #[test]
     fn detect_mix_err() {
         let imports = vec![
-            "modus:abi/log@2.0.0".to_string(),
-            "modus:abi/wait@2.1.0".to_string(),
+            "modus:abi/log@2.1.0".to_string(),
+            "modus:abi/wait@2.2.0".to_string(),
         ];
         assert_eq!(
             detect_abi_package(&imports),
@@ -231,5 +227,6 @@ mod tests {
         assert!(detect_abi_package(&[]).is_err());
         assert!(detect_abi_package(&["wasi:cli/environment@0.2.0".into()]).is_err());
         assert!(detect_abi_package(&["modus:abi/log@1.0.0".into()]).is_err());
+        assert!(detect_abi_package(&["modus:abi/log@2.0.0".into()]).is_err());
     }
 }

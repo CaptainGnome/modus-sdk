@@ -11,6 +11,7 @@
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 wit_bindgen::generate!({

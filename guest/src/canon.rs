@@ -50,6 +50,7 @@ mod payloads {
             name_color: sanitize_name_color(name_color),
             message_id,
             rewarded: false,
+            badges: vec![],
         })
     }
 

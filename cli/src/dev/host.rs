@@ -1,6 +1,6 @@
 use super::act::ActJob;
 use super::bus::Bus;
-use super::event::parse_opaque;
+use super::event::{parse_opaque, EventKind, ModAction, Payload, MAX_BODY_BYTES};
 use super::history::HistoryGate;
 use super::kv::DevKv;
 use super::mailbox::{Mail, Mailbox};
@@ -10,30 +10,31 @@ use super::random::RandomGate;
 use super::settings::DevSettings;
 use super::wit_map::{from_wit_act_kind, map_payload, to_wit_act, to_wit_event};
 use crate::hosts::HostSpec;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use wasmtime::StoreLimits;
 
-pub mod abi_2_1 {
+pub mod abi_2_2 {
     wasmtime::component::bindgen!({
         path: "../wit",
         world: "runtime",
     });
 }
 
-pub mod abi_2_0 {
+pub mod abi_2_1 {
     wasmtime::component::bindgen!({
-        path: "../wit/frozen/2.0.0",
+        path: "../wit/frozen/2.1.0",
         world: "runtime",
     });
 }
 
-pub use abi_2_0::Runtime as Runtime20;
-pub use abi_2_1::{modus, Runtime};
+pub use abi_2_1::Runtime as Runtime21;
+pub use abi_2_2::{modus, Runtime};
 
 use super::event::{kind_as_str, kind_of};
 
@@ -53,6 +54,9 @@ pub(crate) struct HostData {
     pub(crate) has_alert: bool,
     pub(crate) has_kv: bool,
     pub(crate) has_chat: bool,
+    pub(crate) has_mangle: bool,
+    /// event_id → (owner plugin_id, text)
+    pub(crate) mangles: Arc<Mutex<HashMap<String, (String, String)>>>,
     pub(crate) has_cache: bool,
     pub(crate) has_catalog: bool,
     pub(crate) has_ui: bool,
@@ -165,6 +169,7 @@ impl modus::abi::wait::Host for HostData {
                 modus::abi::wait::Ready::WsText(modus::abi::wait::WsFrame { handle, text })
             }
             Mail::WsClosed(handle) => {
+                let _ = self.net.ws_close(handle);
                 if self.halted() {
                     modus::abi::wait::Ready::Stop
                 } else {
@@ -474,6 +479,153 @@ impl modus::abi::chat_act::Host for HostData {
             job.text.as_deref().unwrap_or("")
         );
         Ok(id)
+    }
+}
+
+impl modus::abi::chat_mangle::Host for HostData {
+    fn mangle(&mut self, event_id: String, text: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_mangle {
+            return Err("no grant chat.mangle".into());
+        }
+        dev_mangle_apply(self, &event_id, &text)
+    }
+
+    fn clear(&mut self, event_id: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_mangle {
+            return Err("no grant chat.mangle".into());
+        }
+        dev_mangle_clear(self, &event_id)
+    }
+}
+
+fn is_mangleable_kind(kind: &EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Message | EventKind::Donation | EventKind::Sub | EventKind::Reward
+    )
+}
+
+fn mangle_author_id(payload: &Payload) -> Option<&str> {
+    match payload {
+        Payload::Message { user_id, .. }
+        | Payload::Donation { user_id, .. }
+        | Payload::Sub { user_id, .. }
+        | Payload::Reward { user_id, .. } => Some(user_id.as_str()),
+        _ => None,
+    }
+}
+
+fn mangle_message_id(payload: &Payload) -> Option<&str> {
+    match payload {
+        Payload::Message { message_id, .. } => message_id.as_deref().filter(|s| !s.is_empty()),
+        _ => None,
+    }
+}
+
+fn moderation_hides_dev(events: &[super::event::Event], target: &super::event::Event) -> bool {
+    let Some(author_id) = mangle_author_id(&target.payload) else {
+        return false;
+    };
+    let message_id = mangle_message_id(&target.payload);
+    for event in events {
+        if event.kind != EventKind::Moderation {
+            continue;
+        }
+        if event.source.platform != target.source.platform
+            || event.source.channel != target.source.channel
+        {
+            continue;
+        }
+        let after = event.ts > target.ts
+            || (event.ts == target.ts && event.id.to_string() > target.id.to_string());
+        if !after {
+            continue;
+        }
+        let Payload::Moderation {
+            action,
+            target_user_id,
+            message_id: mod_message_id,
+            ..
+        } = &event.payload
+        else {
+            continue;
+        };
+        if *action == ModAction::Unban {
+            continue;
+        }
+        if *action == ModAction::Delete {
+            if let Some(mid) = mod_message_id.as_deref().filter(|s| !s.is_empty()) {
+                if message_id == Some(mid) {
+                    return true;
+                }
+            }
+        }
+        if matches!(
+            action,
+            ModAction::Delete | ModAction::Ban | ModAction::Timeout
+        ) && !target_user_id.is_empty()
+            && target_user_id == author_id
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn dev_mangle_apply(host: &HostData, event_id: &str, text: &str) -> Result<(), String> {
+    let id = event_id.trim();
+    if uuid::Uuid::parse_str(id).is_err() {
+        return Err("no event".into());
+    }
+    let event = host
+        .bus
+        .get_by_id(id)?
+        .ok_or_else(|| "no event".to_string())?;
+    if !is_mangleable_kind(&event.kind) {
+        return Err("kind not mangleable".into());
+    }
+    if event.flags.hide_chat {
+        return Err("hidden".into());
+    }
+    let all = host.bus.events_snapshot()?;
+    if moderation_hides_dev(&all, &event) {
+        return Err("hidden by moderation".into());
+    }
+    let mut map = host.mangles.lock().map_err(|err| err.to_string())?;
+    if let Some((owner, _)) = map.get(id) {
+        if owner != &host.plugin_id {
+            return Err("owned by another plugin".into());
+        }
+    }
+    if text.is_empty() {
+        map.remove(id);
+        let _ = writeln!(io::stderr(), "chat.mangle clear {id}");
+        return Ok(());
+    }
+    if text.len() > MAX_BODY_BYTES {
+        return Err("text too long".into());
+    }
+    map.insert(id.to_string(), (host.plugin_id.clone(), text.to_string()));
+    let _ = writeln!(io::stderr(), "chat.mangle {id} {}", text.len());
+    Ok(())
+}
+
+fn dev_mangle_clear(host: &HostData, event_id: &str) -> Result<(), String> {
+    let id = event_id.trim();
+    if uuid::Uuid::parse_str(id).is_err() {
+        return Err("no event".into());
+    }
+    let mut map = host.mangles.lock().map_err(|err| err.to_string())?;
+    match map.get(id) {
+        Some((owner, _)) if owner != &host.plugin_id => Err("owned by another plugin".into()),
+        Some(_) => {
+            map.remove(id);
+            let _ = writeln!(io::stderr(), "chat.mangle clear {id}");
+            Ok(())
+        }
+        None => Ok(()),
     }
 }
 

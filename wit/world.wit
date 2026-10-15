@@ -1,4 +1,4 @@
-package modus:abi@2.1.0;
+package modus:abi@2.2.0;
 
 interface types {
   record emote {
@@ -24,6 +24,11 @@ interface types {
     currency: string,
   }
 
+  record badge-ref {
+    set: string,
+    version: string,
+  }
+
   record message {
     user-id: string,
     display-name: string,
@@ -31,6 +36,7 @@ interface types {
     name-color: option<string>,
     message-id: option<string>,
     rewarded: bool,
+    badges: list<badge-ref>,
   }
 
   record donation {
@@ -376,6 +382,13 @@ interface chat-act {
   act: func(job: act-job) -> result<string, string>;
 }
 
+/// Display-only text substitution. Payload and filter mask stay unchanged.
+interface chat-mangle {
+  /// Empty text clears. One writer per event-id.
+  mangle: func(event-id: string, text: string) -> result<_, string>;
+  clear: func(event-id: string) -> result<_, string>;
+}
+
 interface chat-complete {
   complete: func(id: string, outcome: result<_, string>);
 }
@@ -550,6 +563,7 @@ world plugin {
   import alert-enqueue;
   import storage-kv;
   import chat-act;
+  import chat-mangle;
   import chat-complete;
   import media-cache;
   import media-audio;
@@ -581,6 +595,7 @@ world runtime {
   import alert-enqueue;
   import storage-kv;
   import chat-act;
+  import chat-mangle;
   import chat-complete;
   import media-cache;
   import media-audio;

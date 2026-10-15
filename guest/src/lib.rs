@@ -15,6 +15,7 @@
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -33,6 +34,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -50,6 +52,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -66,6 +69,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -81,6 +85,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -95,6 +100,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -108,6 +114,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -120,6 +127,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -131,6 +139,7 @@ compile_error!("modus-sdk: exactly one role-feature");
         feature = "rates",
         feature = "alerter",
         feature = "commander",
+        feature = "mangle",
         feature = "store",
     )
 ))]
@@ -138,14 +147,28 @@ compile_error!("modus-sdk: exactly one role-feature");
 
 #[cfg(all(
     feature = "rates",
-    any(feature = "alerter", feature = "commander", feature = "store")
+    any(
+        feature = "alerter",
+        feature = "commander",
+        feature = "mangle",
+        feature = "store",
+    )
 ))]
 compile_error!("modus-sdk: exactly one role-feature");
 
-#[cfg(all(feature = "alerter", any(feature = "commander", feature = "store")))]
+#[cfg(all(
+    feature = "alerter",
+    any(feature = "commander", feature = "mangle", feature = "store")
+))]
 compile_error!("modus-sdk: exactly one role-feature");
 
-#[cfg(all(feature = "commander", feature = "store"))]
+#[cfg(all(
+    feature = "commander",
+    any(feature = "mangle", feature = "store")
+))]
+compile_error!("modus-sdk: exactly one role-feature");
+
+#[cfg(all(feature = "mangle", feature = "store"))]
 compile_error!("modus-sdk: exactly one role-feature");
 
 mod canon;
@@ -167,6 +190,7 @@ pub use error::{next_backoff_ms, HostError, BACKOFF_MAX_MS, BACKOFF_START_MS};
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub mod bindings;
@@ -184,6 +208,7 @@ pub mod bindings;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 mod backoff;
@@ -201,6 +226,7 @@ mod backoff;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub use backoff::wait_backoff;
@@ -225,6 +251,7 @@ pub use canon::{donation, follow, money, reward, text_fragment, text_message, vi
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub use bindings::exports::modus::abi::lifecycle::Guest;
@@ -242,6 +269,7 @@ pub use bindings::exports::modus::abi::lifecycle::Guest;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub use bindings::modus::abi::{assets, clock, log, plugins, self_info, settings, types, wait};
@@ -259,6 +287,7 @@ pub use bindings::modus::abi::{assets, clock, log, plugins, self_info, settings,
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 mod plugins_util;
@@ -276,6 +305,7 @@ mod plugins_util;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub use plugins_util::platforms_with_kind;
@@ -293,6 +323,7 @@ pub use plugins_util::platforms_with_kind;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub mod random;
@@ -312,6 +343,7 @@ pub mod random;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub fn set_label_i18n(key: &str, label_key: &str, params: Option<&str>) -> Result<(), String> {
@@ -331,6 +363,7 @@ pub fn set_label_i18n(key: &str, label_key: &str, params: Option<&str>) -> Resul
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 pub use bindings::modus::abi::types::{SystemCode, SystemEvent};
@@ -341,14 +374,17 @@ pub use bindings::modus::abi::{bus_emit, chat_complete};
 #[cfg(any(feature = "connector", feature = "rates"))]
 pub use bindings::modus::abi::net_http;
 
-#[cfg(any(feature = "emitter", feature = "connector"))]
+#[cfg(any(feature = "emitter", feature = "connector", feature = "provider"))]
 pub use bindings::modus::abi::media_cache;
+
+#[cfg(any(feature = "provider", feature = "connector", feature = "emitter"))]
+pub use bindings::modus::abi::catalog;
 
 #[cfg(feature = "connector")]
 pub use bindings::modus::abi::{auth_token, net_grpc, net_ws};
 
 #[cfg(feature = "provider")]
-pub use bindings::modus::abi::{catalog, media_cache, net_http, net_ws};
+pub use bindings::modus::abi::{net_http, net_ws};
 
 #[cfg(feature = "widget")]
 pub use bindings::modus::abi::ui_slot;
@@ -377,6 +413,9 @@ pub use bindings::modus::abi::{alert_enqueue, history_read, media_audio, ui_slot
 #[cfg(feature = "commander")]
 pub use bindings::modus::abi::chat_act;
 
+#[cfg(feature = "mangle")]
+pub use bindings::modus::abi::chat_mangle;
+
 #[cfg(feature = "store")]
 pub use bindings::modus::abi::storage_kv;
 
@@ -394,6 +433,7 @@ pub use bindings::modus::abi::storage_kv;
     feature = "rates",
     feature = "alerter",
     feature = "commander",
+    feature = "mangle",
     feature = "store",
 ))]
 #[macro_export]

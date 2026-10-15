@@ -4,7 +4,7 @@ mod event;
 mod grpc;
 mod history;
 mod host;
-mod host_v20;
+mod host_v21;
 mod inject;
 mod kv;
 mod mailbox;
@@ -23,7 +23,7 @@ use crate::wasm::component_imports;
 use act::load_acts;
 use bus::Bus;
 use history::HistoryGate;
-use host::{HostData, Runtime, Runtime20};
+use host::{HostData, Runtime, Runtime21};
 use inject::load_events;
 use kv::DevKv;
 use mailbox::{Mail, Mailbox};
@@ -46,29 +46,29 @@ const RUN_EPOCH_TICKS: u64 = 10_000;
 const STOP_JOIN: Duration = Duration::from_secs(5);
 
 enum BoundPlugin {
-    V20(Runtime20),
-    V21(Runtime),
+    V21(Runtime21),
+    V22(Runtime),
 }
 
 impl BoundPlugin {
     fn call_init(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
         match self {
-            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_init(store),
             Self::V21(plugin) => plugin.modus_abi_lifecycle().call_init(store),
+            Self::V22(plugin) => plugin.modus_abi_lifecycle().call_init(store),
         }
     }
 
     fn call_run(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
         match self {
-            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_run(store),
             Self::V21(plugin) => plugin.modus_abi_lifecycle().call_run(store),
+            Self::V22(plugin) => plugin.modus_abi_lifecycle().call_run(store),
         }
     }
 
     fn call_shutdown(&self, store: &mut Store<HostData>) -> wasmtime::Result<()> {
         match self {
-            Self::V20(plugin) => plugin.modus_abi_lifecycle().call_shutdown(store),
             Self::V21(plugin) => plugin.modus_abi_lifecycle().call_shutdown(store),
+            Self::V22(plugin) => plugin.modus_abi_lifecycle().call_shutdown(store),
         }
     }
 }
@@ -171,6 +171,8 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         has_alert: manifest.capabilities.contains(&Capability::AlertEnqueue),
         has_kv: manifest.capabilities.contains(&Capability::StorageKv),
         has_chat: manifest.capabilities.contains(&Capability::ChatAct),
+        has_mangle: manifest.capabilities.contains(&Capability::ChatMangle),
+        mangles: Arc::new(std::sync::Mutex::new(HashMap::new())),
         has_cache: manifest.grants_media_cache(),
         has_catalog: manifest.grants_catalog(),
         has_ui: manifest.has_ui_surface(),
@@ -204,9 +206,9 @@ pub fn run(args: DevArgs) -> Result<(), String> {
     store.set_epoch_deadline(INIT_EPOCH_TICKS);
 
     let mut linker = Linker::new(&engine);
-    host::abi_2_0::Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
-        .map_err(|err| err.to_string())?;
     host::abi_2_1::Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
+        .map_err(|err| err.to_string())?;
+    host::abi_2_2::Runtime::add_to_linker::<HostData, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|err| err.to_string())?;
     let map_instantiate = |err: wasmtime::Error| -> String {
         let msg = err.to_string();
@@ -219,11 +221,11 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         }
     };
     let plugin = match abi {
-        AbiPackage::V20 => BoundPlugin::V20(
-            Runtime20::instantiate(&mut store, &wasm_component, &linker)
+        AbiPackage::V21 => BoundPlugin::V21(
+            Runtime21::instantiate(&mut store, &wasm_component, &linker)
                 .map_err(map_instantiate)?,
         ),
-        AbiPackage::V21 => BoundPlugin::V21(
+        AbiPackage::V22 => BoundPlugin::V22(
             Runtime::instantiate(&mut store, &wasm_component, &linker)
                 .map_err(map_instantiate)?,
         ),

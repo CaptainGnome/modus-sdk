@@ -1482,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "modus-sdk"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "wit-bindgen 0.41.0",
 ]

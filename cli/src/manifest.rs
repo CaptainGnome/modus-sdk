@@ -25,6 +25,8 @@ pub enum Capability {
     StorageKv,
     #[serde(rename = "chat.act")]
     ChatAct,
+    #[serde(rename = "chat.mangle")]
+    ChatMangle,
     #[serde(rename = "ui.slot")]
     UiSlot,
     #[serde(rename = "media.cache")]
@@ -269,11 +271,16 @@ impl Manifest {
                         return Err("provides emotes: schema modus.emotes.v1".into());
                     }
                 }
+                "badges" => {
+                    if item.schema != "modus.badges.v1" {
+                        return Err("provides badges: schema modus.badges.v1".into());
+                    }
+                }
                 other => return Err(format!("provides: unknown name {other}")),
             }
         }
         for name in &self.consumes {
-            if name != "emotes" {
+            if name != "emotes" && name != "badges" {
                 return Err(format!("consumes: unknown name {name}"));
             }
         }

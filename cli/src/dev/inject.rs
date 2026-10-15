@@ -64,6 +64,7 @@ pub fn default_fixture() -> Vec<EmitRequest> {
                 name_color: None,
                 message_id: None,
                 rewarded: false,
+                badges: vec![],
             },
         ),
         host_event(Payload::Donation {

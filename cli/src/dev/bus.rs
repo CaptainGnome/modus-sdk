@@ -52,6 +52,16 @@ impl Bus {
         page_ring(&log, cursor, limit)
     }
 
+    pub fn get_by_id(&self, id: &str) -> Result<Option<Event>, String> {
+        let log = self.log.lock().map_err(|err| err.to_string())?;
+        Ok(log.iter().find(|event| event.id.to_string() == id).cloned())
+    }
+
+    pub fn events_snapshot(&self) -> Result<Vec<Event>, String> {
+        let log = self.log.lock().map_err(|err| err.to_string())?;
+        Ok(log.iter().cloned().collect())
+    }
+
     fn dispatch(&self, req: EmitRequest) -> Result<(), String> {
         let event = Event::stamp(req).map_err(|err| err.to_string())?;
         eprintln!(

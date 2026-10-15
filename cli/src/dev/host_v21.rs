@@ -1,15 +1,14 @@
-//! modus:abi@2.0.0 Host impls (frozen; no net-grpc). Same HostData as 2.1.
+//! modus:abi@2.1.0 Host impls (frozen). Same HostData as 2.2.
 use super::act::ActJob;
 use super::event::{kind_as_str, kind_of, parse_opaque};
-use super::host::abi_2_0::modus;
+use super::host::abi_2_1::modus;
 use super::host::{validate_dev_asset_path, HostData};
 use super::mailbox::Mail;
-use super::wit_map::v20::{from_wit_act_kind, map_payload, to_wit_act, to_wit_event};
+use super::wit_map::v21::{from_wit_act_kind, map_payload, to_wit_act, to_wit_event};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-
 impl modus::abi::types::Host for HostData {}
 
 impl modus::abi::random::Host for HostData {
@@ -82,6 +81,7 @@ impl modus::abi::wait::Host for HostData {
                 modus::abi::wait::Ready::WsText(modus::abi::wait::WsFrame { handle, text })
             }
             Mail::WsClosed(handle) => {
+                let _ = self.net.ws_close(handle);
                 if self.halted() {
                     modus::abi::wait::Ready::Stop
                 } else {
@@ -114,7 +114,28 @@ impl modus::abi::wait::Host for HostData {
                     return self.wait();
                 }
             }
-            Mail::GrpcMsg { .. } | Mail::GrpcClosed { .. } => return self.wait(),
+            Mail::GrpcMsg { handle, bytes } => {
+                if self.has_grpc {
+                    modus::abi::wait::Ready::GrpcMsg(modus::abi::wait::GrpcFrame { handle, bytes })
+                } else {
+                    return self.wait();
+                }
+            }
+            Mail::GrpcClosed {
+                handle,
+                status,
+                message,
+            } => {
+                if self.has_grpc {
+                    modus::abi::wait::Ready::GrpcClosed(modus::abi::wait::GrpcClose {
+                        handle,
+                        status,
+                        message,
+                    })
+                } else {
+                    return self.wait();
+                }
+            }
         }
     }
 }
@@ -434,6 +455,49 @@ impl modus::abi::net_ws::Host for HostData {
             return Err("no grant net.ws".into());
         }
         self.net.ws_close(handle)
+    }
+}
+
+impl modus::abi::net_grpc::Host for HostData {
+    fn call(
+        &mut self,
+        authority: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        request: Vec<u8>,
+    ) -> Result<modus::abi::net_grpc::GrpcResponse, String> {
+        self.running()?;
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        let resp = super::grpc::grpc_call(&self.specs, &authority, &path, &headers, &request)?;
+        Ok(modus::abi::net_grpc::GrpcResponse {
+            status: resp.status,
+            message: resp.message,
+            body: resp.body,
+        })
+    }
+
+    fn open_stream(
+        &mut self,
+        authority: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        request: Vec<u8>,
+    ) -> Result<u32, String> {
+        self.running()?;
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        self.net
+            .grpc_open_stream(&authority, &path, &headers, &request)
+    }
+
+    fn cancel(&mut self, handle: u32) -> Result<(), String> {
+        if !self.has_grpc {
+            return Err("no grant net.grpc".into());
+        }
+        self.net.grpc_cancel(handle)
     }
 }
 

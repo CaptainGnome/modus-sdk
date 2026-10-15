@@ -62,6 +62,15 @@ pub enum Fragment {
     },
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeRef {
+    pub set: String,
+    pub version: String,
+}
+
+pub const MAX_BADGES: usize = 16;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Money {
     pub amount: f64,
@@ -93,6 +102,8 @@ pub enum Payload {
         message_id: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         rewarded: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        badges: Vec<BadgeRef>,
     },
     #[serde(rename_all = "camelCase")]
     Donation {
@@ -451,6 +462,28 @@ pub fn sanitize_name_color(raw: Option<String>) -> Option<String> {
     Some(out)
 }
 
+fn is_badge_set_token(value: &str) -> bool {
+    let b = value.as_bytes();
+    (1..=64).contains(&b.len())
+        && b.iter()
+            .all(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
+}
+
+fn is_badge_version_token(value: &str) -> bool {
+    if value.is_empty() || value == "*" {
+        return true;
+    }
+    is_badge_set_token(value)
+}
+
+/// Cap at 16; drop refs with bad tokens. Message still lives.
+pub fn sanitize_badges(raw: Vec<BadgeRef>) -> Vec<BadgeRef> {
+    raw.into_iter()
+        .filter(|b| is_badge_set_token(&b.set) && is_badge_version_token(&b.version))
+        .take(MAX_BADGES)
+        .collect()
+}
+
 pub fn payload_text(payload: &Payload) -> String {
     match payload {
         Payload::Message { fragments, .. } => fragments_text(fragments),
@@ -560,6 +593,7 @@ mod tests {
                 name_color: None,
                 message_id: None,
                 rewarded: false,
+                badges: vec![],
             },
             None,
         )

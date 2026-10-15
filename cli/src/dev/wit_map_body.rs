@@ -24,13 +24,17 @@ fn map_fragment(fragment: modus::abi::types::Fragment) -> Fragment {
 pub(crate) fn map_payload(payload: modus::abi::types::Payload) -> Result<Payload, String> {
     use modus::abi::types::Payload as WitPayload;
     Ok(match payload {
-        WitPayload::Message(msg) => Payload::Message {
-            user_id: msg.user_id,
-            display_name: msg.display_name,
-            fragments: msg.fragments.into_iter().map(map_fragment).collect(),
-            name_color: sanitize_name_color(msg.name_color),
-            message_id: empty_to_none(msg.message_id),
-            rewarded: msg.rewarded,
+        WitPayload::Message(msg) => {
+            let badges = badges_from_wit(&msg);
+            Payload::Message {
+                user_id: msg.user_id,
+                display_name: msg.display_name,
+                fragments: msg.fragments.into_iter().map(map_fragment).collect(),
+                name_color: sanitize_name_color(msg.name_color),
+                message_id: empty_to_none(msg.message_id),
+                rewarded: msg.rewarded,
+                badges,
+            }
         },
         WitPayload::Donation(don) => Payload::Donation {
             user_id: don.user_id,
@@ -161,14 +165,16 @@ fn to_wit_payload(payload: Payload) -> modus::abi::types::Payload {
             name_color,
             message_id,
             rewarded,
-        } => WitPayload::Message(modus::abi::types::Message {
+            badges,
+        } => WitPayload::Message(message_to_wit(
             user_id,
             display_name,
-            fragments: fragments.into_iter().map(to_wit_fragment).collect(),
+            fragments.into_iter().map(to_wit_fragment).collect(),
             name_color,
             message_id,
             rewarded,
-        }),
+            badges,
+        )),
         Payload::Donation {
             user_id,
             display_name,
