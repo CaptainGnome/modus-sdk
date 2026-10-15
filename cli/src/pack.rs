@@ -15,7 +15,7 @@ pub enum Profile {
 }
 
 impl Profile {
-    fn dir_name(self) -> &'static str {
+    fn default_dir_name(self) -> &'static str {
         match self {
             Self::Debug => "debug",
             Self::Release => "release",
@@ -57,8 +57,9 @@ fn compile_rust_component(plugin_dir: &Path, profile: Profile) -> Result<Vec<u8>
     let plugin_dir = abs_plugin_dir(plugin_dir)?;
     let package_name = crate_package_name(&plugin_dir)?;
     let target_dir = resolve_target_dir(&plugin_dir)?;
-    cargo_build(&plugin_dir, profile, &target_dir)?;
-    let wasm_path = wasm_artifact(&target_dir, &package_name, profile);
+    let cargo_profile = resolve_cargo_profile(&plugin_dir, profile);
+    cargo_build(&plugin_dir, &cargo_profile, &target_dir)?;
+    let wasm_path = wasm_artifact(&target_dir, &package_name, &cargo_profile);
     let module = fs::read(&wasm_path).map_err(|err| {
         format!(
             "missing {}: {err}. Need target wasm32-unknown-unknown",
@@ -66,6 +67,31 @@ fn compile_rust_component(plugin_dir: &Path, profile: Profile) -> Result<Vec<u8>
         )
     })?;
     encode_component(&module)
+}
+
+/// Cargo `--profile` / artifact dir name for a guest build.
+///
+/// Release order: `MODUS_CARGO_PROFILE` → workspace `[profile.release-guest]` → `release`.
+fn resolve_cargo_profile(plugin_dir: &Path, profile: Profile) -> String {
+    match profile {
+        Profile::Debug => Profile::Debug.default_dir_name().into(),
+        Profile::Release => {
+            if let Ok(name) = env::var("MODUS_CARGO_PROFILE") {
+                let name = name.trim();
+                if !name.is_empty() {
+                    return name.to_string();
+                }
+            }
+            if let Some(root) = find_workspace_root(plugin_dir) {
+                if let Ok(text) = fs::read_to_string(root.join("Cargo.toml")) {
+                    if text.contains("[profile.release-guest]") {
+                        return "release-guest".into();
+                    }
+                }
+            }
+            Profile::Release.default_dir_name().into()
+        }
+    }
 }
 
 /// Cargo target dir for a plugin build.
@@ -216,7 +242,7 @@ pub fn pack(plugin_dir: &Path) -> Result<PathBuf, String> {
     Ok(out)
 }
 
-fn cargo_build(plugin_dir: &Path, profile: Profile, target_dir: &Path) -> Result<(), String> {
+fn cargo_build(plugin_dir: &Path, cargo_profile: &str, target_dir: &Path) -> Result<(), String> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(cargo);
     cmd.arg("build")
@@ -224,8 +250,14 @@ fn cargo_build(plugin_dir: &Path, profile: Profile, target_dir: &Path) -> Result
         .arg(plugin_dir.join("Cargo.toml"))
         .args(["--target", "wasm32-unknown-unknown"])
         .env("CARGO_TARGET_DIR", target_dir);
-    if matches!(profile, Profile::Release) {
-        cmd.arg("--release");
+    match cargo_profile {
+        "debug" => {}
+        "release" => {
+            cmd.arg("--release");
+        }
+        name => {
+            cmd.arg("--profile").arg(name);
+        }
     }
     let status = cmd.status().map_err(|err| format!("cargo: {err}"))?;
     if !status.success() {
@@ -246,11 +278,10 @@ pub fn crate_package_name(plugin_dir: &Path) -> Result<String, String> {
         .ok_or_else(|| "Cargo.toml: missing package.name".to_string())
 }
 
-fn wasm_artifact(target_dir: &Path, package_name: &str, profile: Profile) -> PathBuf {
+fn wasm_artifact(target_dir: &Path, package_name: &str, cargo_profile: &str) -> PathBuf {
     let stem = package_name.replace('-', "_");
     target_dir.join(format!(
-        "wasm32-unknown-unknown/{}/{stem}.wasm",
-        profile.dir_name()
+        "wasm32-unknown-unknown/{cargo_profile}/{stem}.wasm"
     ))
 }
 
