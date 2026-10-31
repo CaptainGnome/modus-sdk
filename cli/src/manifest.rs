@@ -57,6 +57,13 @@ pub enum AuthMode {
     Custom,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum IntrospectMethod {
+    Get,
+    Post,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
     pub id: String,
@@ -84,6 +91,10 @@ pub struct Manifest {
     pub device_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub userinfo_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub introspect_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub introspect_method: Option<IntrospectMethod>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -321,6 +332,7 @@ impl Manifest {
             if self.auth_url.is_some() || self.token_url.is_some() || self.device_url.is_some() {
                 return Err("need auth.mode".into());
             }
+            self.require_optional_https("introspect_url", self.introspect_url.as_deref())?;
             return Ok(());
         }
         if !self.grants_auth() {
@@ -377,6 +389,7 @@ impl Manifest {
                 self.require_optional_https("userinfo_url", self.userinfo_url.as_deref())?;
             }
         }
+        self.require_optional_https("introspect_url", self.introspect_url.as_deref())?;
         Ok(())
     }
 

@@ -271,8 +271,20 @@ interface bus-emit {
 }
 
 interface auth-token {
+  record token-status {
+    active: bool,
+    expires-at: option<s64>,
+    scopes: list<string>,
+  }
+
   list-accounts: func() -> list<string>;
   token: func(account-id: string) -> result<string, string>;
+  /// Drop RAM access cache and run the same refresh path as a TTL miss.
+  refresh: func(account-id: string) -> result<string, string>;
+  /// Drop cache, mark revoked, emit auth-revoked — no refresh attempt.
+  invalidate: func(account-id: string) -> result<_, string>;
+  /// Probe `introspect_url` (Bearer access). Does not mark revoked.
+  introspect: func(account-id: string) -> result<token-status, string>;
 }
 
 interface net-http {

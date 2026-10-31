@@ -381,6 +381,14 @@ pub use bindings::modus::abi::media_cache;
 pub use bindings::modus::abi::catalog;
 
 #[cfg(feature = "connector")]
+mod auth_recover;
+
+#[cfg(feature = "connector")]
+pub use auth_recover::{
+    fetch_authed, fetch_authed_on, fetch_unauthorized, is_auth_http, recover_auth,
+};
+
+#[cfg(feature = "connector")]
 pub use bindings::modus::abi::{auth_token, net_grpc, net_ws};
 
 #[cfg(feature = "provider")]
@@ -416,7 +424,7 @@ pub use bindings::modus::abi::chat_act;
 #[cfg(feature = "mangle")]
 pub use bindings::modus::abi::chat_mangle;
 
-#[cfg(feature = "store")]
+#[cfg(any(feature = "store", feature = "rates"))]
 pub use bindings::modus::abi::storage_kv;
 
 /// Export guest `lifecycle`. Write `modus_sdk::export!(MyPlugin);`

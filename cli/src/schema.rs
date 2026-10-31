@@ -22,6 +22,7 @@ enum FieldType {
     List,
     Secret,
     Label,
+    Button,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -94,7 +95,7 @@ impl SettingsSchema {
                 .text
                 .as_ref()
                 .map(|text| text.fallback().to_string()),
-            FieldType::Secret => None,
+            FieldType::Secret | FieldType::Button => None,
             FieldType::String => field
                 .default
                 .as_ref()
@@ -184,6 +185,7 @@ impl SettingsSchema {
                 Ok(text.to_string())
             }
             FieldType::Label => Err("label only via set-label".into()),
+            FieldType::Button => Err("button only via click".into()),
         }
     }
 
@@ -369,6 +371,14 @@ impl SettingsField {
                     }
                 }
             }
+            FieldType::Button => {
+                if self.default.is_some() {
+                    return Err("settings.json: button must not have default".into());
+                }
+                if self.text.is_some() {
+                    return Err("settings.json: button must not have text".into());
+                }
+            }
         }
         Ok(())
     }
@@ -453,6 +463,31 @@ mod tests {
             .fields
             .iter()
             .any(|field| field.key == "token"));
+    }
+
+    #[test]
+    fn parses_button_field() {
+        let schema = SettingsSchema::parse(
+            br#"{
+                "version": 1,
+                "sections": [{
+                    "id": "main",
+                    "title": "Main",
+                    "fields": [{
+                        "key": "refresh",
+                        "type": "button",
+                        "label": {"key": "settings.refresh", "fallback": "Refresh"}
+                    }]
+                }]
+            }"#,
+        )
+        .unwrap();
+        assert!(schema.has_field("refresh"));
+        assert!(schema
+            .validate_value("refresh", &Value::Bool(true))
+            .unwrap_err()
+            .contains("click"));
+        assert!(schema.i18n_keys().contains(&"settings.refresh".to_string()));
     }
 
     #[test]

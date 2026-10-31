@@ -80,6 +80,12 @@ pub(crate) struct HostData {
     pub(crate) specs: Vec<HostSpec>,
     pub(crate) auth_account: String,
     pub(crate) access_token: Option<String>,
+    /// From manifest; absent → `introspect` returns `no introspect`.
+    pub(crate) introspect_url: Option<String>,
+    /// `MODUS_DEV_AUTH_REFRESH_REVOKED=1` → `refresh` fails like Core revoke.
+    pub(crate) auth_refresh_revoked: bool,
+    /// `MODUS_DEV_INTROSPECT_ACTIVE=0` → fake inactive token.
+    pub(crate) introspect_active: bool,
     pub(crate) limits: StoreLimits,
 }
 
@@ -662,6 +668,55 @@ impl modus::abi::auth_token::Host for HostData {
             return Err("foreign account".into());
         }
         Ok(token.clone())
+    }
+
+    fn refresh(&mut self, account_id: String) -> Result<String, String> {
+        self.running()?;
+        if !self.has_auth {
+            return Err("no grant auth.token".into());
+        }
+        if account_id != self.auth_account || self.access_token.is_none() {
+            return Err("foreign account".into());
+        }
+        if self.auth_refresh_revoked {
+            self.access_token = None;
+            return Err("refresh revoked".into());
+        }
+        // Dev has no RAM TTL cache; return the same access as a successful refresh.
+        Ok(self.access_token.clone().unwrap())
+    }
+
+    fn invalidate(&mut self, account_id: String) -> Result<(), String> {
+        self.running()?;
+        if !self.has_auth {
+            return Err("no grant auth.token".into());
+        }
+        if account_id != self.auth_account {
+            return Err("foreign account".into());
+        }
+        self.access_token = None;
+        Ok(())
+    }
+
+    fn introspect(
+        &mut self,
+        account_id: String,
+    ) -> Result<modus::abi::auth_token::TokenStatus, String> {
+        self.running()?;
+        if !self.has_auth {
+            return Err("no grant auth.token".into());
+        }
+        if self.introspect_url.is_none() {
+            return Err("no introspect".into());
+        }
+        if account_id != self.auth_account || self.access_token.is_none() {
+            return Err("foreign account".into());
+        }
+        Ok(modus::abi::auth_token::TokenStatus {
+            active: self.introspect_active,
+            expires_at: None,
+            scopes: Vec::new(),
+        })
     }
 }
 

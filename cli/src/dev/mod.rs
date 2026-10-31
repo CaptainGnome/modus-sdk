@@ -196,6 +196,9 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         embed_specs,
         auth_account,
         access_token,
+        introspect_url: manifest.introspect_url.clone(),
+        auth_refresh_revoked: env_truthy("MODUS_DEV_AUTH_REFRESH_REVOKED"),
+        introspect_active: !env_falsy("MODUS_DEV_INTROSPECT_ACTIVE"),
         limits: StoreLimitsBuilder::new().memory_size(16 << 20).build(),
     };
 
@@ -345,4 +348,18 @@ fn ui_value_bytes(value: serde_json::Value) -> Result<Vec<u8>, String> {
         serde_json::Value::String(text) => Ok(text.into_bytes()),
         other => serde_json::to_vec(&other).map_err(|err| format!("ui: {err}")),
     }
+}
+
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref().map(str::trim),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
+fn env_falsy(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref().map(str::trim),
+        Some("0") | Some("false") | Some("FALSE") | Some("no") | Some("NO")
+    )
 }

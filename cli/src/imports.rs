@@ -43,19 +43,10 @@ const KNOWN_NAMES: &[&str] = &[
 /// Optional interfaces only in `@2.2.0` (not in frozen 2.1).
 const V22_ONLY_NAMES: &[&str] = &["chat-mangle"];
 
-pub const MEDIA_EMBED_IMPORT: &str = "modus:abi/media-embed@2.2.0";
-pub const MEDIA_EMBED_IMPORT_V21: &str = "modus:abi/media-embed@2.1.0";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AbiPackage {
     V21,
     V22,
-}
-
-pub fn imports_media_embed(imports: &[String]) -> bool {
-    imports
-        .iter()
-        .any(|import| import == MEDIA_EMBED_IMPORT || import == MEDIA_EMBED_IMPORT_V21)
 }
 
 /// Split `modus:abi/<name>@<version>` into `(name, version)`.
@@ -188,13 +179,6 @@ mod tests {
         let mut granted = HashSet::new();
         granted.insert(Capability::BusEmit);
         err(&imports, &granted);
-    }
-
-    #[test]
-    fn media_embed_either_version() {
-        assert!(imports_media_embed(&["modus:abi/media-embed@2.1.0".into()]));
-        assert!(imports_media_embed(&["modus:abi/media-embed@2.2.0".into()]));
-        assert!(!imports_media_embed(&["modus:abi/log@2.2.0".into()]));
     }
 
     #[test]
