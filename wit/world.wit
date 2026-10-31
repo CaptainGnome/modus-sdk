@@ -504,6 +504,18 @@ interface ui-slot {
   post: func(payload: list<u8>) -> result<_, string>;
 }
 
+/// User-facing toast in Core chrome. Grant `ui.toast`. Soft-link import.
+interface ui-toast {
+  enum level {
+    info,
+    warn,
+    err,
+  }
+
+  /// Plain string or plugin i18n key (`assets/i18n`). No HTML. Storm 2/s.
+  show: func(level: level, message: string) -> result<_, string>;
+}
+
 interface net-bridge {
   connect: func(url: string) -> result<u32, string>;
   send-text: func(handle: u32, message: string) -> result<_, string>;
@@ -581,6 +593,7 @@ world plugin {
   import media-audio;
   import catalog;
   import ui-slot;
+  import ui-toast;
   import history-read;
   import net-bridge;
   import media-embed;
@@ -613,6 +626,7 @@ world runtime {
   import media-audio;
   import catalog;
   import ui-slot;
+  import ui-toast;
   import history-read;
   import net-bridge;
   import media-embed;

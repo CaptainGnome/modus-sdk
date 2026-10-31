@@ -20,6 +20,7 @@ alerter = []
 commander = []
 mangle = []
 store = []
+toast = []
 
 [dependencies]
 wit-bindgen = "0.41"

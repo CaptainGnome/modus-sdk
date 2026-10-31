@@ -176,6 +176,7 @@ pub fn run(args: DevArgs) -> Result<(), String> {
         has_cache: manifest.grants_media_cache(),
         has_catalog: manifest.grants_catalog(),
         has_ui: manifest.has_ui_surface(),
+        has_toast: manifest.grants_toast(),
         has_history: manifest.grants_history(),
         has_audio: manifest.grants_media_audio(),
         has_bridge: manifest.grants_net_bridge(),

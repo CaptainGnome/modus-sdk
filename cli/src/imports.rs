@@ -41,7 +41,7 @@ const KNOWN_NAMES: &[&str] = &[
 ];
 
 /// Optional interfaces only in `@2.2.0` (not in frozen 2.1).
-const V22_ONLY_NAMES: &[&str] = &["chat-mangle"];
+const V22_ONLY_NAMES: &[&str] = &["chat-mangle", "ui-toast"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AbiPackage {
@@ -171,6 +171,12 @@ mod tests {
         let imports = vec!["modus:abi/ui-slot@2.2.0".into()];
         assert!(validate_imports(&imports, &HashSet::new(), false).is_ok());
         assert!(validate_imports(&imports, &HashSet::new(), true).is_ok());
+    }
+
+    #[test]
+    fn ui_toast_v22_only() {
+        ok(&["modus:abi/ui-toast@2.2.0".into()], &HashSet::new());
+        err(&["modus:abi/ui-toast@2.1.0".into()], &HashSet::new());
     }
 
     #[test]

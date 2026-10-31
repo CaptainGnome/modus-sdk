@@ -427,6 +427,9 @@ pub use bindings::modus::abi::chat_mangle;
 #[cfg(any(feature = "store", feature = "rates"))]
 pub use bindings::modus::abi::storage_kv;
 
+#[cfg(feature = "toast")]
+pub use bindings::modus::abi::ui_toast;
+
 /// Export guest `lifecycle`. Write `modus_sdk::export!(MyPlugin);`
 #[cfg(any(
     feature = "consumer",

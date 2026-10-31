@@ -60,6 +60,7 @@ pub(crate) struct HostData {
     pub(crate) has_cache: bool,
     pub(crate) has_catalog: bool,
     pub(crate) has_ui: bool,
+    pub(crate) has_toast: bool,
     pub(crate) has_history: bool,
     pub(crate) has_audio: bool,
     pub(crate) has_bridge: bool,
@@ -1123,6 +1124,30 @@ impl modus::abi::ui_slot::Host for HostData {
             "ui-slot post ({} bytes)\n{text}",
             payload.len()
         );
+        Ok(())
+    }
+}
+
+impl modus::abi::ui_toast::Host for HostData {
+    fn show(
+        &mut self,
+        level: modus::abi::ui_toast::Level,
+        message: String,
+    ) -> Result<(), String> {
+        self.running()?;
+        if !self.has_toast {
+            return Err("no grant ui.toast".into());
+        }
+        let text = message.trim();
+        if text.is_empty() {
+            return Err("empty toast".into());
+        }
+        let level = match level {
+            modus::abi::ui_toast::Level::Info => "info",
+            modus::abi::ui_toast::Level::Warn => "warn",
+            modus::abi::ui_toast::Level::Err => "err",
+        };
+        let _ = writeln!(io::stderr(), "ui-toast [{level}] {text}");
         Ok(())
     }
 }

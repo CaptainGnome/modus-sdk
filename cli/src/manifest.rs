@@ -29,6 +29,8 @@ pub enum Capability {
     ChatMangle,
     #[serde(rename = "ui.slot")]
     UiSlot,
+    #[serde(rename = "ui.toast")]
+    UiToast,
     #[serde(rename = "media.cache")]
     MediaCache,
     #[serde(rename = "catalog.publish")]
@@ -410,6 +412,10 @@ impl Manifest {
 
     pub fn grants_ui_slot(&self) -> bool {
         self.capabilities.contains(&Capability::UiSlot)
+    }
+
+    pub fn grants_toast(&self) -> bool {
+        self.capabilities.contains(&Capability::UiToast)
     }
 
     pub fn grants_media_cache(&self) -> bool {
